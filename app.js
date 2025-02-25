@@ -37,7 +37,7 @@ function updateSoundBasedOnPose(pose) {
     // Neem de positie van de rechterhand (index 10)
     const rightWrist = pose.keypoints.find(point => point.name === "rightWrist");
     
-    if (rightWrist && rightWrist.score > 0.5) {
+    if (rightWrist && rightWrist.score > 0.5 && rightWrist.position) {
       // Stel de frequentie en het volume in op basis van de afstand van de rechterhand
       let frequency = 500 + rightWrist.position.y * 0.5;  // Stel de frequentie in op basis van de Y-positie van de hand
       let volume = Math.min(1, rightWrist.position.y / 300); // Stel het volume in op basis van de Y-positie van de hand
@@ -61,7 +61,8 @@ async function detectPose() {
     
     // Teken de keypoints (lichamelijke posities) op het canvas
     keypoints.forEach(point => {
-      if (point.score > 0.5) {
+      // Check of het keypoint valide is voordat je toegang krijgt tot position
+      if (point && point.position && point.score > 0.5) {
         ctx.beginPath();
         ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
         ctx.fillStyle = "red";

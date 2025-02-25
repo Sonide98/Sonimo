@@ -10,6 +10,12 @@ navigator.mediaDevices.getUserMedia({ video: true })
     console.error("Error accessing webcam/camera: " + err);
   });
 
+// Wacht tot OpenCV.js volledig is geladen voordat we verder gaan
+cv.onRuntimeInitialized = () => {
+    // Start motion tracking zodra OpenCV.js klaar is
+    startTracking();
+};
+
 // Web Audio API voor geluid genereren
 let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let oscillator = audioContext.createOscillator();
@@ -62,4 +68,3 @@ function startTracking() {
 
 // Initialiseer variabelen en start tracking
 let prevGray = new cv.Mat();
-startTracking();

@@ -19,25 +19,39 @@ let lastPositions = {
 // Initialize camera with high quality back camera
 async function initializeCamera() {
     try {
-        // Force back camera selection
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                facingMode: { exact: "environment" }, // This forces back camera
-                width: { ideal: 1280 },  // Reduced for better performance
+                facingMode: { exact: "environment" },
+                width: { ideal: 1280 },
                 height: { ideal: 720 }
             }
         });
 
         video.srcObject = stream;
-        await video.play();
-
-        // Set canvas size to match video
-        canvas.width = 1280;
-        canvas.height = 720;
+        video.onloadedmetadata = () => {
+            video.play();
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        };
         
         console.log('Camera initialized successfully');
     } catch (err) {
         console.error("Camera error:", err);
+        // Fallback to any available camera
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                video.play();
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            };
+        } catch (fallbackErr) {
+            console.error("Fallback camera error:", fallbackErr);
+        }
     }
 }
 
@@ -216,14 +230,24 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Initialize camera with lower resolution for better performance
-const camera = new window.Camera(video, {
-    onFrame: async () => {
-        await pose.send({image: video});
-    },
-    width: 1280,
-    height: 720
-});
+// Start everything in the correct order
+async function startApp() {
+    await initializeCamera();
+    
+    // Initialize camera after pose is ready
+    const camera = new window.Camera(video, {
+        onFrame: async () => {
+            await pose.send({image: video});
+        },
+        width: 1280,
+        height: 720
+    });
+
+    camera.start();
+}
+
+// Start the application
+startApp();
 
 // More robust audio initialization
 startButton.addEventListener('click', async () => {

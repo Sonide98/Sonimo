@@ -23,10 +23,10 @@ startButton.addEventListener('click', () => {
     startButton.textContent = 'Audio Running';
 });
 
-// Initialize camera with fallback options
+// Initialize camera with front camera
 navigator.mediaDevices.getUserMedia({
     video: {
-        facingMode: 'environment',
+        facingMode: 'user',
         width: { ideal: 640 },
         height: { ideal: 480 }
     }
@@ -37,15 +37,6 @@ navigator.mediaDevices.getUserMedia({
 })
 .catch(function(err) {
     console.error("Error accessing camera: ", err);
-    // Try fallback to any available camera
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(function(stream) {
-            video.srcObject = stream;
-            video.play();
-        })
-        .catch(function(err) {
-            console.error("Camera access completely failed: ", err);
-        });
 });
 
 // Initialize MediaPipe Pose
@@ -60,30 +51,42 @@ pose.setOptions({
     smoothLandmarks: true,
     enableSegmentation: false,
     smoothSegmentation: false,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
 });
 
-// Function to update sound based on pose
+// Updated function to use full body movement
 function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
-    const nose = landmarks[0];
-    const leftShoulder = landmarks[11];
-    const rightShoulder = landmarks[12];
+    // Use hip points for height reference
+    const leftHip = landmarks[23];
+    const rightHip = landmarks[24];
+    const leftAnkle = landmarks[27];
+    const rightAnkle = landmarks[28];
 
-    if (nose && leftShoulder && rightShoulder) {
-        // Map y position (0-1) to frequency range (200-2000 Hz)
-        let frequency = 200 + (1 - nose.y) * 1800;
-        // Calculate volume based on shoulder movement
-        let volume = Math.min(0.5, Math.abs(leftShoulder.y - rightShoulder.y));
+    if (leftHip && rightHip && leftAnkle && rightAnkle) {
+        // Calculate overall body height (distance from hips to ankles)
+        const leftHeight = Math.abs(leftAnkle.y - leftHip.y);
+        const rightHeight = Math.abs(rightAnkle.y - rightHip.y);
+        const avgHeight = (leftHeight + rightHeight) / 2;
 
-        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-        gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+        // Calculate lateral movement using hip positions
+        const hipMovement = Math.abs(leftHip.x - rightHip.x);
+
+        // Map vertical position to frequency (200-800 Hz - lower range)
+        let frequency = 200 + (avgHeight * 600);
+        
+        // Map lateral movement to volume (with reduced sensitivity)
+        let volume = Math.min(0.3, hipMovement * 0.5);
+
+        // Smooth the audio changes
+        oscillator.frequency.setTargetAtTime(frequency, audioContext.currentTime, 0.1);
+        gainNode.gain.setTargetAtTime(volume, audioContext.currentTime, 0.1);
     }
 }
 
-// Process pose results
+// Update the onResults function to draw connections between points
 function onResults(results) {
     if (!canvas.width || !canvas.height) {
         canvas.width = video.videoWidth;
@@ -94,11 +97,13 @@ function onResults(results) {
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
-        // Draw landmarks
+        // Draw landmarks and connections
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
+            {color: '#00FF00', lineWidth: 2});
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
-                ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
+                ctx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
                 ctx.fillStyle = "red";
                 ctx.fill();
             }

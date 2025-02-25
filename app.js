@@ -8,25 +8,10 @@ let audioContext;
 let oscillator;
 let gainNode;
 
-// Initialize audio on button click (to comply with browser autoplay policies)
-startButton.addEventListener('click', () => {
-    // Initialize audio context
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    oscillator = audioContext.createOscillator();
-    gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Start with volume 0
-    oscillator.start();
-    startButton.disabled = true;
-    startButton.textContent = 'Audio Running';
-});
-
-// Initialize camera with front camera
+// Initialize camera with back camera
 navigator.mediaDevices.getUserMedia({
     video: {
-        facingMode: 'user',
+        facingMode: { exact: "environment" }, // This will force the back camera
         width: { ideal: 640 },
         height: { ideal: 480 }
     }
@@ -36,7 +21,13 @@ navigator.mediaDevices.getUserMedia({
     video.play();
 })
 .catch(function(err) {
-    console.error("Error accessing camera: ", err);
+    console.error("Error accessing back camera: ", err);
+    // Fallback to any available camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(function(stream) {
+            video.srcObject = stream;
+            video.play();
+        });
 });
 
 // Initialize MediaPipe Pose
@@ -55,34 +46,73 @@ pose.setOptions({
     minTrackingConfidence: 0.6
 });
 
-// Updated function to use full body movement
+// Create multiple oscillators for different sounds
+function createOscillator(type, frequency) {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    gain.gain.setValueAtTime(0, audioContext.currentTime);
+    return { oscillator: osc, gainNode: gain };
+}
+
+// Initialize audio on button click with multiple oscillators
+startButton.addEventListener('click', () => {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Create different oscillators for different leg movements
+    leftLegOsc = createOscillator('sine', 220);  // A3 note
+    rightLegOsc = createOscillator('sine', 277.18);  // C#4 note
+    
+    leftLegOsc.oscillator.start();
+    rightLegOsc.oscillator.start();
+    
+    startButton.disabled = true;
+    startButton.textContent = 'Audio Running';
+});
+
+// Updated function to create rhythmic sounds from leg movement
 function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
-    // Use hip points for height reference
+    // Leg points
     const leftHip = landmarks[23];
     const rightHip = landmarks[24];
+    const leftKnee = landmarks[25];
+    const rightKnee = landmarks[26];
     const leftAnkle = landmarks[27];
     const rightAnkle = landmarks[28];
 
-    if (leftHip && rightHip && leftAnkle && rightAnkle) {
-        // Calculate overall body height (distance from hips to ankles)
-        const leftHeight = Math.abs(leftAnkle.y - leftHip.y);
-        const rightHeight = Math.abs(rightAnkle.y - rightHip.y);
-        const avgHeight = (leftHeight + rightHeight) / 2;
+    if (leftHip && leftKnee && leftAnkle && rightHip && rightKnee && rightAnkle) {
+        // Calculate leg movements
+        const leftLegMovement = Math.abs(leftAnkle.y - leftKnee.y) / Math.abs(leftKnee.y - leftHip.y);
+        const rightLegMovement = Math.abs(rightAnkle.y - rightKnee.y) / Math.abs(rightKnee.y - rightHip.y);
 
-        // Calculate lateral movement using hip positions
-        const hipMovement = Math.abs(leftHip.x - rightHip.x);
+        // Threshold for triggering sounds
+        const threshold = 1.2; // Adjust this value to change sensitivity
 
-        // Map vertical position to frequency (200-800 Hz - lower range)
-        let frequency = 200 + (avgHeight * 600);
+        // Left leg sound
+        if (leftLegMovement > threshold) {
+            // Play a short note
+            leftLegOsc.gainNode.gain.setTargetAtTime(0.3, audioContext.currentTime, 0.01);
+            leftLegOsc.gainNode.gain.setTargetAtTime(0, audioContext.currentTime + 0.1, 0.05);
+        }
+
+        // Right leg sound
+        if (rightLegMovement > threshold) {
+            // Play a short note
+            rightLegOsc.gainNode.gain.setTargetAtTime(0.3, audioContext.currentTime, 0.01);
+            rightLegOsc.gainNode.gain.setTargetAtTime(0, audioContext.currentTime + 0.1, 0.05);
+        }
+
+        // Update frequencies based on leg position
+        const leftFreq = 220 + (leftLegMovement * 50);  // Base A3 note
+        const rightFreq = 277.18 + (rightLegMovement * 50);  // Base C#4 note
         
-        // Map lateral movement to volume (with reduced sensitivity)
-        let volume = Math.min(0.3, hipMovement * 0.5);
-
-        // Smooth the audio changes
-        oscillator.frequency.setTargetAtTime(frequency, audioContext.currentTime, 0.1);
-        gainNode.gain.setTargetAtTime(volume, audioContext.currentTime, 0.1);
+        leftLegOsc.oscillator.frequency.setTargetAtTime(leftFreq, audioContext.currentTime, 0.1);
+        rightLegOsc.oscillator.frequency.setTargetAtTime(rightFreq, audioContext.currentTime, 0.1);
     }
 }
 

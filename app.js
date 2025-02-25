@@ -1,94 +1,124 @@
 let video = document.getElementById('videoInput');
 let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
+let startButton = document.getElementById('startButton');
 
-// Vraag toegang tot de camera en gebruik de achtercamera op mobiel
-navigator.mediaDevices.getUserMedia({
-  video: { facingMode: { exact: "environment" } }  // Achtercamera op mobiel
-})
-  .then(function (stream) {
-    video.srcObject = stream;
+// Audio context and oscillator variables
+let audioContext;
+let oscillator;
+let gainNode;
+
+// Initialize audio on button click (to comply with browser autoplay policies)
+startButton.addEventListener('click', () => {
+    // Initialize audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    oscillator = audioContext.createOscillator();
+    gainNode = audioContext.createGain();
     
-    // Wacht totdat de video geladen is en stel de canvas afmetingen in
-    video.onloadedmetadata = function () {
-      // Stel de canvas afmetingen in op de video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
-  }).catch(function (err) {
-    console.error("Error accessing webcam/camera: " + err);
-  });
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Start with volume 0
+    oscillator.start();
+    startButton.disabled = true;
+    startButton.textContent = 'Audio Running';
+});
 
-// Laad MediaPipe Pose
-const pose = new window.mediapipe.pose.Pose({
-  locateFile: (file) => {
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3/${file}`;
-  }
+// Initialize camera with fallback options
+navigator.mediaDevices.getUserMedia({
+    video: {
+        facingMode: 'environment',
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+    }
+})
+.then(function(stream) {
+    video.srcObject = stream;
+    video.play();
+})
+.catch(function(err) {
+    console.error("Error accessing camera: ", err);
+    // Try fallback to any available camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(function(stream) {
+            video.srcObject = stream;
+            video.play();
+        })
+        .catch(function(err) {
+            console.error("Camera access completely failed: ", err);
+        });
+});
+
+// Initialize MediaPipe Pose
+const pose = new window.Pose({
+    locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }
 });
 
 pose.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  enableSegmentation: true,
-  smoothSegmentation: true,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    smoothSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
 });
 
-// Audio context voor geluid genereren
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
-let oscillator = audioContext.createOscillator();
-let gainNode = audioContext.createGain();
-
-oscillator.connect(gainNode);
-gainNode.connect(audioContext.destination);
-oscillator.start();
-
-// Functie om geluid te wijzigen op basis van lichaamsbeweging
+// Function to update sound based on pose
 function updateSoundBasedOnPose(landmarks) {
-  if (landmarks && landmarks.length > 0) {
-    const nose = landmarks[0]; // We gebruiken de neus als referentiepunt (of kies een ander belangrijk punt)
+    if (!audioContext || !landmarks || landmarks.length === 0) return;
+
+    const nose = landmarks[0];
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
 
-    // Stel de frequentie in op basis van de y-positie van de neus
-    let frequency = 500 + nose.y * 0.5;
-    let volume = Math.min(1, Math.abs(leftShoulder.y - rightShoulder.y) / 300); // Volume aanpassen op basis van schouderbeweging
+    if (nose && leftShoulder && rightShoulder) {
+        // Map y position (0-1) to frequency range (200-2000 Hz)
+        let frequency = 200 + (1 - nose.y) * 1800;
+        // Calculate volume based on shoulder movement
+        let volume = Math.min(0.5, Math.abs(leftShoulder.y - rightShoulder.y));
 
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-  }
+        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+        gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+    }
 }
 
-// Verwerken van de pose
+// Process pose results
 function onResults(results) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    if (!canvas.width || !canvas.height) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+    }
 
-  // Teken de keypoints (lichamelijke posities) op het canvas
-  if (results.poseLandmarks) {
-    results.poseLandmarks.forEach((point) => {
-      if (point.visibility > 0.5) {
-        ctx.beginPath();
-        ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
-        ctx.fillStyle = "red";
-        ctx.fill();
-      }
-    });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-    // Update het geluid op basis van de lichaamsbewegingen
-    updateSoundBasedOnPose(results.poseLandmarks);
-  }
+    if (results.poseLandmarks) {
+        // Draw landmarks
+        results.poseLandmarks.forEach((point) => {
+            if (point.visibility > 0.5) {
+                ctx.beginPath();
+                ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = "red";
+                ctx.fill();
+            }
+        });
+
+        updateSoundBasedOnPose(results.poseLandmarks);
+    }
 }
 
-// Start de pose-detectie
+// Set up pose detection
 pose.onResults(onResults);
 
-// Start de detectie in een loop
-async function detectPose() {
-  await pose.send({image: video});
-  requestAnimationFrame(detectPose);
-}
+// Create camera object
+const camera = new window.Camera(video, {
+    onFrame: async () => {
+        await pose.send({image: video});
+    },
+    width: 640,
+    height: 480
+});
 
-detectPose();  // Start detecteren
+camera.start();
 

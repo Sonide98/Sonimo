@@ -233,29 +233,52 @@ const camera = new window.Camera(video, {
 
 camera.start();
 
-// Updated audio initialization
-startButton.addEventListener('click', () => {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Create all oscillators
-    leftLegOsc = createPercussionSound();
-    rightLegOsc = createPercussionSound();
-    leftArmOsc = createPercussionSound();
-    rightArmOsc = createPercussionSound();
-    
-    // Set initial frequencies
-    leftLegOsc.oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
-    rightLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-    leftArmOsc.oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
-    rightArmOsc.oscillator.frequency.setValueAtTime(350, audioContext.currentTime);
-    
-    // Start all oscillators
-    leftLegOsc.oscillator.start();
-    rightLegOsc.oscillator.start();
-    leftArmOsc.oscillator.start();
-    rightArmOsc.oscillator.start();
-    
-    startButton.disabled = true;
-    startButton.textContent = 'Audio Running';
+// Updated audio initialization to prevent freezing
+startButton.addEventListener('click', async () => {
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Create all oscillators
+        leftLegOsc = createPercussionSound();
+        rightLegOsc = createPercussionSound();
+        leftArmOsc = createPercussionSound();
+        rightArmOsc = createPercussionSound();
+        
+        // Set initial frequencies with lower values
+        leftLegOsc.oscillator.frequency.setValueAtTime(100, audioContext.currentTime);
+        rightLegOsc.oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+        leftArmOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+        rightArmOsc.oscillator.frequency.setValueAtTime(250, audioContext.currentTime);
+        
+        // Start oscillators with a small delay between each
+        await Promise.all([
+            startOscillatorSafely(leftLegOsc.oscillator),
+            startOscillatorSafely(rightLegOsc.oscillator),
+            startOscillatorSafely(leftArmOsc.oscillator),
+            startOscillatorSafely(rightArmOsc.oscillator)
+        ]);
+        
+        startButton.disabled = true;
+        startButton.textContent = 'Audio Running';
+    } catch (error) {
+        console.error('Audio initialization failed:', error);
+        startButton.textContent = 'Start Audio';
+        startButton.disabled = false;
+    }
 });
+
+// Helper function to safely start oscillators
+function startOscillatorSafely(oscillator) {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            try {
+                oscillator.start();
+                resolve();
+            } catch (error) {
+                console.error('Oscillator start failed:', error);
+                resolve();
+            }
+        }, 100);
+    });
+}
 

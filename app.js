@@ -81,35 +81,37 @@ pose.setOptions({
 
 // Updated createPercussionSound function
 function createPercussionSound() {
-    const osc = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    
-    // Add a lowpass filter for warmer sound
-    const filter = audioContext.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 1000;
-    filter.Q.value = 0.5;
-    
-    osc.type = 'triangle';  // Changed to triangle for warmer tone
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioContext.destination);
-    
-    gain.gain.setValueAtTime(0, audioContext.currentTime);
-    
-    return { oscillator: osc, gainNode: gain };
+    try {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        
+        // Simpler audio routing
+        osc.type = 'triangle';
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        
+        // Initialize with zero gain
+        gain.gain.setValueAtTime(0, audioContext.currentTime);
+        
+        return { oscillator: osc, gainNode: gain };
+    } catch (error) {
+        console.error('Error creating percussion sound:', error);
+        throw error;
+    }
 }
 
-// Add percussion play function with longer decay
+// Optimize the playPercussion function
 function playPercussion(gainNode, frequency, maxVolume = 0.3) {
     const now = audioContext.currentTime;
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setValueAtTime(0, now);
-    // Quick attack
-    gainNode.gain.linearRampToValueAtTime(maxVolume, now + 0.01);
-    // Longer decay
-    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-    gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
+    try {
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(maxVolume, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+    } catch (error) {
+        console.error('Error playing percussion:', error);
+    }
 }
 
 // Updated detectWalkingMotion function with more sensitive thresholds
@@ -233,52 +235,63 @@ const camera = new window.Camera(video, {
 
 camera.start();
 
-// Updated audio initialization to prevent freezing
+// Updated audio initialization with better error handling and performance
 startButton.addEventListener('click', async () => {
     try {
+        // First suspend camera processing temporarily
+        if (camera) {
+            await camera.stop();
+        }
+
+        // Initialize audio context
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Create all oscillators
-        leftLegOsc = createPercussionSound();
-        rightLegOsc = createPercussionSound();
-        leftArmOsc = createPercussionSound();
-        rightArmOsc = createPercussionSound();
-        
-        // Set initial frequencies with lower values
-        leftLegOsc.oscillator.frequency.setValueAtTime(100, audioContext.currentTime);
-        rightLegOsc.oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
-        leftArmOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-        rightArmOsc.oscillator.frequency.setValueAtTime(250, audioContext.currentTime);
-        
-        // Start oscillators with a small delay between each
-        await Promise.all([
-            startOscillatorSafely(leftLegOsc.oscillator),
-            startOscillatorSafely(rightLegOsc.oscillator),
-            startOscillatorSafely(leftArmOsc.oscillator),
-            startOscillatorSafely(rightArmOsc.oscillator)
-        ]);
-        
+        await audioContext.resume();
+
+        // Create oscillators one by one with error handling
+        const createAndSetupOscillator = async (freq) => {
+            const sound = createPercussionSound();
+            sound.oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
+            return sound;
+        };
+
+        // Create oscillators sequentially
+        leftLegOsc = await createAndSetupOscillator(100);
+        rightLegOsc = await createAndSetupOscillator(150);
+        leftArmOsc = await createAndSetupOscillator(200);
+        rightArmOsc = await createAndSetupOscillator(250);
+
+        // Start oscillators one by one with delay
+        const startOscillator = async (osc) => {
+            try {
+                osc.oscillator.start();
+                await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (err) {
+                console.error('Oscillator start error:', err);
+            }
+        };
+
+        await startOscillator(leftLegOsc);
+        await startOscillator(rightLegOsc);
+        await startOscillator(leftArmOsc);
+        await startOscillator(rightArmOsc);
+
+        // Resume camera after audio setup
+        if (camera) {
+            await camera.start();
+        }
+
         startButton.disabled = true;
         startButton.textContent = 'Audio Running';
+
     } catch (error) {
         console.error('Audio initialization failed:', error);
         startButton.textContent = 'Start Audio';
         startButton.disabled = false;
+        
+        // Ensure camera is running even if audio fails
+        if (camera) {
+            camera.start();
+        }
     }
 });
-
-// Helper function to safely start oscillators
-function startOscillatorSafely(oscillator) {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            try {
-                oscillator.start();
-                resolve();
-            } catch (error) {
-                console.error('Oscillator start failed:', error);
-                resolve();
-            }
-        }, 100);
-    });
-}
 

@@ -16,45 +16,6 @@ let lastPositions = {
     rightArm: 0
 };
 
-// Initialize camera with high quality back camera
-async function initializeCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { exact: "environment" },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        });
-
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-            video.play();
-            // Set canvas size to match video
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-        };
-        
-        console.log('Camera initialized successfully');
-    } catch (err) {
-        console.error("Camera error:", err);
-        // Fallback to any available camera
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true
-            });
-            video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                video.play();
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-            };
-        } catch (fallbackErr) {
-            console.error("Fallback camera error:", fallbackErr);
-        }
-    }
-}
-
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
     locateFile: (file) => {
@@ -69,13 +30,44 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Improved sound creation with multiple oscillators for richer sound
+// Initialize camera
+function initCamera() {
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: { exact: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+        }
+    })
+    .then(function(stream) {
+        video.srcObject = stream;
+        video.play();
+        
+        // Set canvas size
+        canvas.width = 1280;
+        canvas.height = 720;
+        
+        // Start camera after video is ready
+        const camera = new window.Camera(video, {
+            onFrame: async () => {
+                await pose.send({image: video});
+            },
+            width: 1280,
+            height: 720
+        });
+        camera.start();
+    })
+    .catch(function(err) {
+        console.error("Camera error:", err);
+    });
+}
+
+// Sound functions
 function createSound() {
     try {
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
         
-        // Add filter for warmer sound
         const filter = audioContext.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.value = 1000;
@@ -87,39 +79,29 @@ function createSound() {
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
         oscillator.start();
-        
-        console.log('Sound created successfully');
     } catch (error) {
         console.error('Error creating sound:', error);
     }
 }
 
-// Dynamic sound trigger based on movement velocity
 function triggerSound(frequency, velocity) {
-    if (!audioContext || !oscillator || !gainNode) {
-        console.log('Audio system not ready');
-        return;
-    }
+    if (!audioContext || !oscillator || !gainNode) return;
     
     try {
         const now = audioContext.currentTime;
         oscillator.frequency.setValueAtTime(frequency, now);
         
-        // Calculate envelope parameters based on velocity
-        const volume = Math.min(0.7, velocity * 2); // Scale velocity to volume
-        const decayTime = Math.max(0.1, 0.5 - velocity); // Faster movement = shorter decay
+        const volume = Math.min(0.7, velocity * 2);
+        const decayTime = Math.max(0.1, 0.5 - velocity);
         
-        // Dynamic envelope
         gainNode.gain.cancelScheduledValues(now);
         gainNode.gain.setValueAtTime(0, now);
         
         if (velocity > 0.3) {
-            // Quick percussion for fast movements
             gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
             gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
             gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
         } else {
-            // Longer decay for slower movements
             gainNode.gain.linearRampToValueAtTime(volume * 0.7, now + 0.05);
             gainNode.gain.exponentialRampToValueAtTime(0.01, now + decayTime);
             gainNode.gain.linearRampToValueAtTime(0, now + decayTime + 0.1);
@@ -129,12 +111,7 @@ function triggerSound(frequency, velocity) {
     }
 }
 
-// Calculate movement velocity
-function calculateVelocity(currentPos, lastPos) {
-    return Math.abs(currentPos - lastPos);
-}
-
-// Updated motion detection with velocity
+// Motion detection
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -152,33 +129,30 @@ function detectMotions(landmarks) {
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
     
-    // Calculate current positions
     const leftLegPos = Math.abs(leftAnkle.y - leftKnee.y);
     const rightLegPos = Math.abs(rightAnkle.y - rightKnee.y);
     const leftArmPos = Math.abs(leftWrist.y - leftShoulder.y);
     const rightArmPos = Math.abs(rightWrist.y - rightShoulder.y);
     
-    // Calculate velocities
     const result = {
         leftLeg: {
             moving: leftLegPos > 0.03 && leftAnkle.visibility > 0.5,
-            velocity: calculateVelocity(leftLegPos, lastPositions.leftLeg)
+            velocity: Math.abs(leftLegPos - lastPositions.leftLeg)
         },
         rightLeg: {
             moving: rightLegPos > 0.03 && rightAnkle.visibility > 0.5,
-            velocity: calculateVelocity(rightLegPos, lastPositions.rightLeg)
+            velocity: Math.abs(rightLegPos - lastPositions.rightLeg)
         },
         leftArm: {
             moving: leftArmPos > 0.05 && leftWrist.visibility > 0.5,
-            velocity: calculateVelocity(leftArmPos, lastPositions.leftArm)
+            velocity: Math.abs(leftArmPos - lastPositions.leftArm)
         },
         rightArm: {
             moving: rightArmPos > 0.05 && rightWrist.visibility > 0.5,
-            velocity: calculateVelocity(rightArmPos, lastPositions.rightArm)
+            velocity: Math.abs(rightArmPos - lastPositions.rightArm)
         }
     };
     
-    // Update last positions
     lastPositions = {
         leftLeg: leftLegPos,
         rightLeg: rightLegPos,
@@ -189,17 +163,15 @@ function detectMotions(landmarks) {
     return result;
 }
 
-// Updated results processing with velocity-based sounds
+// Process results
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
-        // Draw connections
         drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
             {color: '#00FF00', lineWidth: 2});
             
-        // Draw landmarks
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
@@ -211,7 +183,6 @@ function onResults(results) {
 
         const motions = detectMotions(results.poseLandmarks);
         
-        // Trigger sounds based on movement and velocity
         if (motions.leftLeg.moving) {
             triggerSound(200, motions.leftLeg.velocity);
         }
@@ -230,39 +201,17 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Start everything in the correct order
-async function startApp() {
-    await initializeCamera();
-    
-    // Initialize camera after pose is ready
-    const camera = new window.Camera(video, {
-        onFrame: async () => {
-            await pose.send({image: video});
-        },
-        width: 1280,
-        height: 720
-    });
+// Initialize everything
+initCamera();
 
-    camera.start();
-}
-
-// Start the application
-startApp();
-
-// More robust audio initialization
+// Audio initialization
 startButton.addEventListener('click', async () => {
     try {
-        // Create and resume audio context
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         await audioContext.resume();
-        
-        // Create sound after small delay
-        setTimeout(() => {
-            createSound();
-            console.log('Audio initialized successfully');
-            startButton.disabled = true;
-            startButton.textContent = 'Audio Running';
-        }, 100);
+        createSound();
+        startButton.disabled = true;
+        startButton.textContent = 'Audio Running';
     } catch (error) {
         console.error('Audio initialization failed:', error);
         startButton.textContent = 'Start Audio';

@@ -8,10 +8,15 @@ let audioContext;
 let oscillator;
 let gainNode;
 
-// Initialize camera with back camera
+// Declare variables for oscillators
+let leftLegOsc, rightLegOsc;
+let lastLeftStep = false;
+let lastRightStep = false;
+
+// Initialize camera with back camera (corrected version)
 navigator.mediaDevices.getUserMedia({
     video: {
-        facingMode: { exact: "environment" }, // This will force the back camera
+        facingMode: 'environment', // This is the correct way to request back camera
         width: { ideal: 640 },
         height: { ideal: 480 }
     }
@@ -22,12 +27,6 @@ navigator.mediaDevices.getUserMedia({
 })
 .catch(function(err) {
     console.error("Error accessing back camera: ", err);
-    // Fallback to any available camera
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(function(stream) {
-            video.srcObject = stream;
-            video.play();
-        });
 });
 
 // Initialize MediaPipe Pose
@@ -46,25 +45,44 @@ pose.setOptions({
     minTrackingConfidence: 0.6
 });
 
-// Create multiple oscillators for different sounds
-function createOscillator(type, frequency) {
+// Create percussion sound
+function createPercussionSound() {
     const osc = audioContext.createOscillator();
     const gain = audioContext.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    osc.connect(gain);
+    const filter = audioContext.createBiquadFilter();
+    
+    filter.type = 'bandpass';
+    filter.frequency.value = 200;
+    filter.Q.value = 1;
+    
+    osc.type = 'triangle';
+    osc.connect(filter);
+    filter.connect(gain);
     gain.connect(audioContext.destination);
+    
     gain.gain.setValueAtTime(0, audioContext.currentTime);
+    
     return { oscillator: osc, gainNode: gain };
 }
 
-// Initialize audio on button click with multiple oscillators
+// Play a percussion hit
+function playPercussion(gainNode, frequency) {
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+}
+
+// Initialize audio on button click
 startButton.addEventListener('click', () => {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
-    // Create different oscillators for different leg movements
-    leftLegOsc = createOscillator('sine', 220);  // A3 note
-    rightLegOsc = createOscillator('sine', 277.18);  // C#4 note
+    // Create percussion sounds for each leg
+    leftLegOsc = createPercussionSound();
+    rightLegOsc = createPercussionSound();
+    
+    leftLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);  // Lower drum sound
+    rightLegOsc.oscillator.frequency.setValueAtTime(300, audioContext.currentTime); // Higher drum sound
     
     leftLegOsc.oscillator.start();
     rightLegOsc.oscillator.start();
@@ -78,41 +96,27 @@ function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
     // Leg points
-    const leftHip = landmarks[23];
-    const rightHip = landmarks[24];
-    const leftKnee = landmarks[25];
-    const rightKnee = landmarks[26];
     const leftAnkle = landmarks[27];
     const rightAnkle = landmarks[28];
+    const leftKnee = landmarks[25];
+    const rightKnee = landmarks[26];
 
-    if (leftHip && leftKnee && leftAnkle && rightHip && rightKnee && rightAnkle) {
-        // Calculate leg movements
-        const leftLegMovement = Math.abs(leftAnkle.y - leftKnee.y) / Math.abs(leftKnee.y - leftHip.y);
-        const rightLegMovement = Math.abs(rightAnkle.y - rightKnee.y) / Math.abs(rightKnee.y - rightHip.y);
+    if (leftAnkle && rightAnkle && leftKnee && rightKnee) {
+        // Detect stepping motion
+        const leftStep = leftKnee.y > leftAnkle.y && leftAnkle.visibility > 0.5;
+        const rightStep = rightKnee.y > rightAnkle.y && rightAnkle.visibility > 0.5;
 
-        // Threshold for triggering sounds
-        const threshold = 1.2; // Adjust this value to change sensitivity
-
-        // Left leg sound
-        if (leftLegMovement > threshold) {
-            // Play a short note
-            leftLegOsc.gainNode.gain.setTargetAtTime(0.3, audioContext.currentTime, 0.01);
-            leftLegOsc.gainNode.gain.setTargetAtTime(0, audioContext.currentTime + 0.1, 0.05);
+        // Trigger sounds only on step transitions
+        if (leftStep !== lastLeftStep && leftStep) {
+            playPercussion(leftLegOsc.gainNode, 200);
+        }
+        if (rightStep !== lastRightStep && rightStep) {
+            playPercussion(rightLegOsc.gainNode, 300);
         }
 
-        // Right leg sound
-        if (rightLegMovement > threshold) {
-            // Play a short note
-            rightLegOsc.gainNode.gain.setTargetAtTime(0.3, audioContext.currentTime, 0.01);
-            rightLegOsc.gainNode.gain.setTargetAtTime(0, audioContext.currentTime + 0.1, 0.05);
-        }
-
-        // Update frequencies based on leg position
-        const leftFreq = 220 + (leftLegMovement * 50);  // Base A3 note
-        const rightFreq = 277.18 + (rightLegMovement * 50);  // Base C#4 note
-        
-        leftLegOsc.oscillator.frequency.setTargetAtTime(leftFreq, audioContext.currentTime, 0.1);
-        rightLegOsc.oscillator.frequency.setTargetAtTime(rightFreq, audioContext.currentTime, 0.1);
+        // Update step states
+        lastLeftStep = leftStep;
+        lastRightStep = rightStep;
     }
 }
 

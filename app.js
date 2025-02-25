@@ -84,15 +84,32 @@ function createPercussionSound() {
     const osc = audioContext.createOscillator();
     const gain = audioContext.createGain();
     
-    // Simpler connection without filter
-    osc.type = 'sine';  // Changed to sine for clearer sound
-    osc.connect(gain);
+    // Add a lowpass filter for warmer sound
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1000;
+    filter.Q.value = 0.5;
+    
+    osc.type = 'triangle';  // Changed to triangle for warmer tone
+    osc.connect(filter);
+    filter.connect(gain);
     gain.connect(audioContext.destination);
     
-    // Start with zero gain
     gain.gain.setValueAtTime(0, audioContext.currentTime);
     
     return { oscillator: osc, gainNode: gain };
+}
+
+// Add percussion play function with longer decay
+function playPercussion(gainNode, frequency, maxVolume = 0.3) {
+    const now = audioContext.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(0, now);
+    // Quick attack
+    gainNode.gain.linearRampToValueAtTime(maxVolume, now + 0.01);
+    // Longer decay
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
 }
 
 // Updated detectWalkingMotion function with more sensitive thresholds
@@ -205,13 +222,13 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Create camera object with better resolution
+// Update camera resolution to match canvas
 const camera = new window.Camera(video, {
     onFrame: async () => {
         await pose.send({image: video});
     },
-    width: 1280,
-    height: 720
+    width: 720,    // Reduced for clearer image
+    height: 1280   // Maintained aspect ratio
 });
 
 camera.start();

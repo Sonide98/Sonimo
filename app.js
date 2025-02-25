@@ -11,19 +11,12 @@ let gainNode;
 // Initialize camera with high quality back camera
 async function initializeCamera() {
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        const backCamera = videoDevices.find(device => 
-            device.label.toLowerCase().includes('back') ||
-            device.label.toLowerCase().includes('rear'));
-
+        // Force back camera selection
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                deviceId: backCamera ? { exact: backCamera.deviceId } : undefined,
-                facingMode: { exact: "environment" },
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-                frameRate: { ideal: 30 }
+                facingMode: { exact: "environment" }, // This forces back camera
+                width: { ideal: 1280 },  // Reduced for better performance
+                height: { ideal: 720 }
             }
         });
 
@@ -31,10 +24,10 @@ async function initializeCamera() {
         await video.play();
 
         // Set canvas size to match video
-        const track = stream.getVideoTracks()[0];
-        const settings = track.getSettings();
-        canvas.width = settings.width;
-        canvas.height = settings.height;
+        canvas.width = 1280;
+        canvas.height = 720;
+        
+        console.log('Camera initialized successfully');
     } catch (err) {
         console.error("Camera error:", err);
     }
@@ -54,22 +47,14 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Updated sound creation with more musical characteristics
+// Simplified sound creation for more reliability
 function createSound() {
     try {
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
         
-        // Create a filter for more musical tone
-        const filter = audioContext.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 400;
-        filter.Q.value = 1;
-        
-        // Use sine wave for cleaner tone
-        oscillator.type = 'sine';
-        oscillator.connect(filter);
-        filter.connect(gainNode);
+        oscillator.type = 'triangle';  // Changed to triangle for better percussion
+        oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
@@ -81,17 +66,8 @@ function createSound() {
     }
 }
 
-// Musical note frequencies (pentatonic scale)
-const NOTES = {
-    C4: 261.63,
-    D4: 293.66,
-    E4: 329.63,
-    G4: 392.00,
-    A4: 440.00
-};
-
-// Improved percussion sound with shorter envelope
-function triggerSound(frequency = NOTES.C4, volume = 0.3) {
+// Simplified trigger sound function
+function triggerSound(frequency = 200, volume = 0.5) {
     if (!audioContext || !oscillator || !gainNode) {
         console.log('Audio system not ready');
         return;
@@ -100,21 +76,19 @@ function triggerSound(frequency = NOTES.C4, volume = 0.3) {
     try {
         const now = audioContext.currentTime;
         oscillator.frequency.setValueAtTime(frequency, now);
-        gainNode.gain.cancelScheduledValues(now);
         
-        // Very quick attack
+        // Percussion envelope
         gainNode.gain.setValueAtTime(0, now);
         gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
         
-        // Short decay
-        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-        gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+        console.log('Sound triggered:', frequency);
     } catch (error) {
         console.error('Error triggering sound:', error);
     }
 }
 
-// Improved motion detection with different body parts
+// Make motion detection more sensitive
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: false,
@@ -132,19 +106,11 @@ function detectMotions(landmarks) {
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
     
-    // Detect leg movements
-    const leftLegMovement = Math.abs(leftAnkle.y - leftKnee.y);
-    const rightLegMovement = Math.abs(rightAnkle.y - rightKnee.y);
-    
-    // Detect arm movements
-    const leftArmMovement = Math.abs(leftWrist.y - leftShoulder.y);
-    const rightArmMovement = Math.abs(rightWrist.y - rightShoulder.y);
-    
     return {
-        leftLeg: leftLegMovement > 0.05 && leftAnkle.visibility > 0.5,
-        rightLeg: rightLegMovement > 0.05 && rightAnkle.visibility > 0.5,
-        leftArm: leftArmMovement > 0.1 && leftWrist.visibility > 0.5,
-        rightArm: rightArmMovement > 0.1 && rightWrist.visibility > 0.5
+        leftLeg: Math.abs(leftAnkle.y - leftKnee.y) > 0.03 && leftAnkle.visibility > 0.5,
+        rightLeg: Math.abs(rightAnkle.y - rightKnee.y) > 0.03 && rightAnkle.visibility > 0.5,
+        leftArm: Math.abs(leftWrist.y - leftShoulder.y) > 0.05 && leftWrist.visibility > 0.5,
+        rightArm: Math.abs(rightWrist.y - rightShoulder.y) > 0.05 && rightWrist.visibility > 0.5
     };
 }
 
@@ -189,27 +155,29 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Initialize camera
+// Initialize camera with lower resolution for better performance
 const camera = new window.Camera(video, {
     onFrame: async () => {
         await pose.send({image: video});
     },
-    width: 1920,
-    height: 1080
+    width: 1280,
+    height: 720
 });
 
-// Start everything
-initializeCamera().then(() => camera.start());
-
-// Updated audio initialization with error handling
+// More robust audio initialization
 startButton.addEventListener('click', async () => {
     try {
+        // Create and resume audio context
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         await audioContext.resume();
-        createSound();
-        console.log('Audio initialized successfully');
-        startButton.disabled = true;
-        startButton.textContent = 'Audio Running';
+        
+        // Create sound after small delay
+        setTimeout(() => {
+            createSound();
+            console.log('Audio initialized successfully');
+            startButton.disabled = true;
+            startButton.textContent = 'Audio Running';
+        }, 100);
     } catch (error) {
         console.error('Audio initialization failed:', error);
         startButton.textContent = 'Start Audio';

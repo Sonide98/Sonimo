@@ -54,14 +54,22 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Updated sound functions
+// Updated sound creation with more musical characteristics
 function createSound() {
     try {
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
         
-        oscillator.type = 'triangle';
-        oscillator.connect(gainNode);
+        // Create a filter for more musical tone
+        const filter = audioContext.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 400;
+        filter.Q.value = 1;
+        
+        // Use sine wave for cleaner tone
+        oscillator.type = 'sine';
+        oscillator.connect(filter);
+        filter.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
@@ -73,8 +81,17 @@ function createSound() {
     }
 }
 
-// Improved sound trigger with different frequencies for different movements
-function triggerSound(frequency = 200, volume = 0.3) {
+// Musical note frequencies (pentatonic scale)
+const NOTES = {
+    C4: 261.63,
+    D4: 293.66,
+    E4: 329.63,
+    G4: 392.00,
+    A4: 440.00
+};
+
+// Improved percussion sound with shorter envelope
+function triggerSound(frequency = NOTES.C4, volume = 0.3) {
     if (!audioContext || !oscillator || !gainNode) {
         console.log('Audio system not ready');
         return;
@@ -84,10 +101,14 @@ function triggerSound(frequency = 200, volume = 0.3) {
         const now = audioContext.currentTime;
         oscillator.frequency.setValueAtTime(frequency, now);
         gainNode.gain.cancelScheduledValues(now);
+        
+        // Very quick attack
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-        gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+        
+        // Short decay
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
     } catch (error) {
         console.error('Error triggering sound:', error);
     }
@@ -127,7 +148,7 @@ function detectMotions(landmarks) {
     };
 }
 
-// Updated results processing with multiple sound triggers
+// Updated results processing with musical notes
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
@@ -147,20 +168,20 @@ function onResults(results) {
             }
         });
 
-        // Check all movements and trigger appropriate sounds
+        // Check all movements and trigger musical notes
         const motions = detectMotions(results.poseLandmarks);
         
         if (motions.leftLeg) {
-            triggerSound(150, 0.4);  // Lower frequency for left leg
+            triggerSound(NOTES.C4, 0.4);  // Root note
         }
         if (motions.rightLeg) {
-            triggerSound(200, 0.4);  // Slightly higher for right leg
+            triggerSound(NOTES.E4, 0.4);  // Major third
         }
         if (motions.leftArm) {
-            triggerSound(300, 0.3);  // Higher frequency for left arm
+            triggerSound(NOTES.G4, 0.3);  // Perfect fifth
         }
         if (motions.rightArm) {
-            triggerSound(350, 0.3);  // Highest frequency for right arm
+            triggerSound(NOTES.A4, 0.3);  // Major sixth
         }
     }
 }

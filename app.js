@@ -8,6 +8,13 @@ navigator.mediaDevices.getUserMedia({
 })
   .then(function (stream) {
     video.srcObject = stream;
+    
+    // Wacht totdat de video geladen is en stel de canvas afmetingen in
+    video.onloadedmetadata = function () {
+      // Stel de canvas afmetingen in op de video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
   }).catch(function (err) {
     console.error("Error accessing webcam/camera: " + err);
   });
@@ -84,4 +91,3 @@ async function detectPose() {
 }
 
 detectPose();  // Start detecteren
-

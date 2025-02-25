@@ -30,91 +30,67 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera
+// Initialize camera - simplified to force back camera
 async function initCamera() {
     try {
-        // First try to get all video devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        
-        // Try to find the back camera
-        const backCamera = videoDevices.find(device => 
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('rear') ||
-            device.label.toLowerCase().includes('environment')
-        );
-
-        // Camera constraints with back camera if found
-        const constraints = {
+        const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                deviceId: backCamera ? { exact: backCamera.deviceId } : undefined,
-                facingMode: { exact: "environment" },
+                facingMode: "environment",  // Changed from exact to be more compatible
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
             }
-        };
-
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = stream;
-        await video.play();
-        
-        // Set canvas size
-        canvas.width = 1280;
-        canvas.height = 720;
-        
-        // Start camera after video is ready
-        const camera = new window.Camera(video, {
-            onFrame: async () => {
-                await pose.send({image: video});
-            },
-            width: 1280,
-            height: 720
         });
-        camera.start();
         
-        console.log('Back camera initialized successfully');
-    } catch (err) {
-        console.error("Back camera error:", err);
-        // If back camera fails, try generic video
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" }
-            });
-            video.srcObject = stream;
-            await video.play();
-            
-            // Set canvas size
-            canvas.width = 1280;
-            canvas.height = 720;
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+            video.play();
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
             
             // Start camera after video is ready
             const camera = new window.Camera(video, {
                 onFrame: async () => {
                     await pose.send({image: video});
                 },
-                width: 1280,
-                height: 720
+                width: video.videoWidth,
+                height: video.videoHeight
             });
             camera.start();
-        } catch (fallbackErr) {
-            console.error("Camera fallback error:", fallbackErr);
-        }
+        };
+    } catch (err) {
+        console.error("Camera error:", err);
     }
 }
 
-// Sound functions
+// Improved sound creation for better performance
 function createSound() {
     try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            latencyHint: 'interactive',
+            sampleRate: 44100
+        });
+        
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
         
+        // Improved filter settings
         const filter = audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 1000;
+        filter.frequency.value = 800;
+        filter.Q.value = 1;
         
-        oscillator.type = 'triangle';
+        // Create compressor to prevent crackling
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.value = -24;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        
+        oscillator.type = 'sine'; // Changed to sine for cleaner sound
         oscillator.connect(filter);
-        filter.connect(gainNode);
+        filter.connect(compressor);
+        compressor.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
@@ -124,36 +100,38 @@ function createSound() {
     }
 }
 
+// Optimized sound trigger function
 function triggerSound(frequency, velocity) {
     if (!audioContext || !oscillator || !gainNode) return;
     
     try {
         const now = audioContext.currentTime;
-        // Smoother frequency transition
-        oscillator.frequency.setTargetAtTime(frequency, now, 0.1);
         
-        // Reduced volume and adjusted velocity scaling
-        const volume = Math.min(0.5, velocity * 1.5);
-        const decayTime = Math.max(0.15, 0.4 - velocity);
+        // Smoother frequency changes
+        oscillator.frequency.cancelScheduledValues(now);
+        oscillator.frequency.setTargetAtTime(frequency, now, 0.05);
+        
+        // Improved volume control
+        const volume = Math.min(0.3, velocity * 1.2); // Reduced max volume
         
         gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.setValueAtTime(gainNode.gain.value, now);
         
-        if (velocity > 0.2) { // Reduced sensitivity threshold
+        if (velocity > 0.15) {
             gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-            gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.12);
         } else {
-            gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.05);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, now + decayTime);
-            gainNode.gain.linearRampToValueAtTime(0, now + decayTime + 0.15);
+            gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.04);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.25);
         }
     } catch (error) {
         console.error('Error triggering sound:', error);
     }
 }
 
-// Motion detection with reduced sensitivity
+// Improved motion detection with better smoothing
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -171,8 +149,8 @@ function detectMotions(landmarks) {
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
     
-    // Add smoothing for positions
-    const smoothingFactor = 0.3; // Lower = smoother
+    // Increased smoothing
+    const smoothingFactor = 0.2; // More smoothing
     
     const leftLegPos = Math.abs(leftAnkle.y - leftKnee.y);
     const rightLegPos = Math.abs(rightAnkle.y - rightKnee.y);
@@ -186,19 +164,19 @@ function detectMotions(landmarks) {
     
     const result = {
         leftLeg: {
-            moving: leftLegPos > 0.05 && leftAnkle.visibility > 0.6, // Increased threshold
+            moving: leftLegPos > 0.06 && leftAnkle.visibility > 0.7,
             velocity: smoothVelocity(leftLegPos, lastPositions.leftLeg)
         },
         rightLeg: {
-            moving: rightLegPos > 0.05 && rightAnkle.visibility > 0.6,
+            moving: rightLegPos > 0.06 && rightAnkle.visibility > 0.7,
             velocity: smoothVelocity(rightLegPos, lastPositions.rightLeg)
         },
         leftArm: {
-            moving: leftArmPos > 0.08 && leftWrist.visibility > 0.6,
+            moving: leftArmPos > 0.09 && leftWrist.visibility > 0.7,
             velocity: smoothVelocity(leftArmPos, lastPositions.leftArm)
         },
         rightArm: {
-            moving: rightArmPos > 0.08 && rightWrist.visibility > 0.6,
+            moving: rightArmPos > 0.09 && rightWrist.visibility > 0.7,
             velocity: smoothVelocity(rightArmPos, lastPositions.rightArm)
         }
     };

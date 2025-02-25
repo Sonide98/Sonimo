@@ -8,6 +8,14 @@ let audioContext;
 let oscillator;
 let gainNode;
 
+// Add velocity tracking
+let lastPositions = {
+    leftLeg: 0,
+    rightLeg: 0,
+    leftArm: 0,
+    rightArm: 0
+};
+
 // Initialize camera with high quality back camera
 async function initializeCamera() {
     try {
@@ -47,14 +55,20 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Simplified sound creation for more reliability
+// Improved sound creation with multiple oscillators for richer sound
 function createSound() {
     try {
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
         
-        oscillator.type = 'triangle';  // Changed to triangle for better percussion
-        oscillator.connect(gainNode);
+        // Add filter for warmer sound
+        const filter = audioContext.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 1000;
+        
+        oscillator.type = 'triangle';
+        oscillator.connect(filter);
+        filter.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
@@ -66,8 +80,8 @@ function createSound() {
     }
 }
 
-// Simplified trigger sound function
-function triggerSound(frequency = 200, volume = 0.5) {
+// Dynamic sound trigger based on movement velocity
+function triggerSound(frequency, velocity) {
     if (!audioContext || !oscillator || !gainNode) {
         console.log('Audio system not ready');
         return;
@@ -77,24 +91,42 @@ function triggerSound(frequency = 200, volume = 0.5) {
         const now = audioContext.currentTime;
         oscillator.frequency.setValueAtTime(frequency, now);
         
-        // Percussion envelope
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
-        gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
+        // Calculate envelope parameters based on velocity
+        const volume = Math.min(0.7, velocity * 2); // Scale velocity to volume
+        const decayTime = Math.max(0.1, 0.5 - velocity); // Faster movement = shorter decay
         
-        console.log('Sound triggered:', frequency);
+        // Dynamic envelope
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(0, now);
+        
+        if (velocity > 0.3) {
+            // Quick percussion for fast movements
+            gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+        } else {
+            // Longer decay for slower movements
+            gainNode.gain.linearRampToValueAtTime(volume * 0.7, now + 0.05);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + decayTime);
+            gainNode.gain.linearRampToValueAtTime(0, now + decayTime + 0.1);
+        }
     } catch (error) {
         console.error('Error triggering sound:', error);
     }
 }
 
-// Make motion detection more sensitive
+// Calculate movement velocity
+function calculateVelocity(currentPos, lastPos) {
+    return Math.abs(currentPos - lastPos);
+}
+
+// Updated motion detection with velocity
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
-        leftLeg: false,
-        rightLeg: false,
-        leftArm: false,
-        rightArm: false
+        leftLeg: { moving: false, velocity: 0 },
+        rightLeg: { moving: false, velocity: 0 },
+        leftArm: { moving: false, velocity: 0 },
+        rightArm: { moving: false, velocity: 0 }
     };
     
     const leftAnkle = landmarks[27];
@@ -106,15 +138,44 @@ function detectMotions(landmarks) {
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
     
-    return {
-        leftLeg: Math.abs(leftAnkle.y - leftKnee.y) > 0.03 && leftAnkle.visibility > 0.5,
-        rightLeg: Math.abs(rightAnkle.y - rightKnee.y) > 0.03 && rightAnkle.visibility > 0.5,
-        leftArm: Math.abs(leftWrist.y - leftShoulder.y) > 0.05 && leftWrist.visibility > 0.5,
-        rightArm: Math.abs(rightWrist.y - rightShoulder.y) > 0.05 && rightWrist.visibility > 0.5
+    // Calculate current positions
+    const leftLegPos = Math.abs(leftAnkle.y - leftKnee.y);
+    const rightLegPos = Math.abs(rightAnkle.y - rightKnee.y);
+    const leftArmPos = Math.abs(leftWrist.y - leftShoulder.y);
+    const rightArmPos = Math.abs(rightWrist.y - rightShoulder.y);
+    
+    // Calculate velocities
+    const result = {
+        leftLeg: {
+            moving: leftLegPos > 0.03 && leftAnkle.visibility > 0.5,
+            velocity: calculateVelocity(leftLegPos, lastPositions.leftLeg)
+        },
+        rightLeg: {
+            moving: rightLegPos > 0.03 && rightAnkle.visibility > 0.5,
+            velocity: calculateVelocity(rightLegPos, lastPositions.rightLeg)
+        },
+        leftArm: {
+            moving: leftArmPos > 0.05 && leftWrist.visibility > 0.5,
+            velocity: calculateVelocity(leftArmPos, lastPositions.leftArm)
+        },
+        rightArm: {
+            moving: rightArmPos > 0.05 && rightWrist.visibility > 0.5,
+            velocity: calculateVelocity(rightArmPos, lastPositions.rightArm)
+        }
     };
+    
+    // Update last positions
+    lastPositions = {
+        leftLeg: leftLegPos,
+        rightLeg: rightLegPos,
+        leftArm: leftArmPos,
+        rightArm: rightArmPos
+    };
+    
+    return result;
 }
 
-// Updated results processing with musical notes
+// Updated results processing with velocity-based sounds
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
@@ -134,20 +195,20 @@ function onResults(results) {
             }
         });
 
-        // Check all movements and trigger musical notes
         const motions = detectMotions(results.poseLandmarks);
         
-        if (motions.leftLeg) {
-            triggerSound(NOTES.C4, 0.4);  // Root note
+        // Trigger sounds based on movement and velocity
+        if (motions.leftLeg.moving) {
+            triggerSound(200, motions.leftLeg.velocity);
         }
-        if (motions.rightLeg) {
-            triggerSound(NOTES.E4, 0.4);  // Major third
+        if (motions.rightLeg.moving) {
+            triggerSound(250, motions.rightLeg.velocity);
         }
-        if (motions.leftArm) {
-            triggerSound(NOTES.G4, 0.3);  // Perfect fifth
+        if (motions.leftArm.moving) {
+            triggerSound(300, motions.leftArm.velocity);
         }
-        if (motions.rightArm) {
-            triggerSound(NOTES.A4, 0.3);  // Major sixth
+        if (motions.rightArm.moving) {
+            triggerSound(350, motions.rightArm.velocity);
         }
     }
 }

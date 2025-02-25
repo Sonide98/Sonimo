@@ -54,50 +54,80 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Sound creation
+// Updated sound functions
 function createSound() {
-    oscillator = audioContext.createOscillator();
-    gainNode = audioContext.createGain();
-    
-    oscillator.type = 'triangle';
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-    oscillator.start();
+    try {
+        oscillator = audioContext.createOscillator();
+        gainNode = audioContext.createGain();
+        
+        oscillator.type = 'triangle';
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        oscillator.start();
+        
+        console.log('Sound created successfully');
+    } catch (error) {
+        console.error('Error creating sound:', error);
+    }
 }
 
-// Trigger sound with smoother envelope
+// Improved sound trigger with different frequencies for different movements
 function triggerSound(frequency = 200, volume = 0.3) {
-    if (!audioContext) return;
+    if (!audioContext || !oscillator || !gainNode) {
+        console.log('Audio system not ready');
+        return;
+    }
     
-    const now = audioContext.currentTime;
-    oscillator.frequency.setValueAtTime(frequency, now);
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-    gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
+    try {
+        const now = audioContext.currentTime;
+        oscillator.frequency.setValueAtTime(frequency, now);
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
+    } catch (error) {
+        console.error('Error triggering sound:', error);
+    }
 }
 
-// Detect motion
-function detectMotion(landmarks) {
-    if (!landmarks || landmarks.length === 0) return false;
+// Improved motion detection with different body parts
+function detectMotions(landmarks) {
+    if (!landmarks || landmarks.length === 0) return {
+        leftLeg: false,
+        rightLeg: false,
+        leftArm: false,
+        rightArm: false
+    };
     
     const leftAnkle = landmarks[27];
     const rightAnkle = landmarks[28];
     const leftKnee = landmarks[25];
     const rightKnee = landmarks[26];
+    const leftWrist = landmarks[15];
+    const rightWrist = landmarks[16];
+    const leftShoulder = landmarks[11];
+    const rightShoulder = landmarks[12];
     
-    // More sophisticated motion detection
+    // Detect leg movements
     const leftLegMovement = Math.abs(leftAnkle.y - leftKnee.y);
     const rightLegMovement = Math.abs(rightAnkle.y - rightKnee.y);
     
-    return (leftLegMovement > 0.1 || rightLegMovement > 0.1) && 
-           (leftAnkle.visibility > 0.5 || rightAnkle.visibility > 0.5);
+    // Detect arm movements
+    const leftArmMovement = Math.abs(leftWrist.y - leftShoulder.y);
+    const rightArmMovement = Math.abs(rightWrist.y - rightShoulder.y);
+    
+    return {
+        leftLeg: leftLegMovement > 0.05 && leftAnkle.visibility > 0.5,
+        rightLeg: rightLegMovement > 0.05 && rightAnkle.visibility > 0.5,
+        leftArm: leftArmMovement > 0.1 && leftWrist.visibility > 0.5,
+        rightArm: rightArmMovement > 0.1 && rightWrist.visibility > 0.5
+    };
 }
 
-// Process results with connections
+// Updated results processing with multiple sound triggers
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
@@ -117,8 +147,20 @@ function onResults(results) {
             }
         });
 
-        if (detectMotion(results.poseLandmarks)) {
-            triggerSound(200, 0.3);
+        // Check all movements and trigger appropriate sounds
+        const motions = detectMotions(results.poseLandmarks);
+        
+        if (motions.leftLeg) {
+            triggerSound(150, 0.4);  // Lower frequency for left leg
+        }
+        if (motions.rightLeg) {
+            triggerSound(200, 0.4);  // Slightly higher for right leg
+        }
+        if (motions.leftArm) {
+            triggerSound(300, 0.3);  // Higher frequency for left arm
+        }
+        if (motions.rightArm) {
+            triggerSound(350, 0.3);  // Highest frequency for right arm
         }
     }
 }
@@ -138,11 +180,13 @@ const camera = new window.Camera(video, {
 // Start everything
 initializeCamera().then(() => camera.start());
 
-// Audio initialization
-startButton.addEventListener('click', () => {
+// Updated audio initialization with error handling
+startButton.addEventListener('click', async () => {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume();
         createSound();
+        console.log('Audio initialized successfully');
         startButton.disabled = true;
         startButton.textContent = 'Audio Running';
     } catch (error) {

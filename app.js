@@ -2,7 +2,7 @@ let video = document.getElementById('videoInput');
 let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
 
-// Vraag toegang tot de camera (werkt zowel voor desktop als mobiel)
+// Vraag toegang tot de camera
 navigator.mediaDevices.getUserMedia({ video: true })
   .then(function (stream) {
     video.srcObject = stream;
@@ -10,11 +10,12 @@ navigator.mediaDevices.getUserMedia({ video: true })
     console.error("Error accessing webcam/camera: " + err);
   });
 
-// Wacht tot OpenCV.js volledig is geladen voordat we verder gaan
-cv.onRuntimeInitialized = () => {
-    // Start motion tracking zodra OpenCV.js klaar is
-    startTracking();
-};
+// Laad het pose model van TensorFlow.js
+let detector;
+(async () => {
+  detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
+  detectPose();
+})();
 
 // Web Audio API voor geluid genereren
 let audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -29,42 +30,44 @@ gainNode.connect(audioContext.destination);
 oscillator.start();
 
 // Functie om geluid te wijzigen op basis van beweging
-function updateSoundBasedOnMotion(motionMat) {
-  let nonZeroCount = cv.countNonZero(motionMat); // Aantal witte pixels in de beweging
-  let frequency = Math.min(500 + (nonZeroCount / 100), 2000);  // Frequentie gebaseerd op de hoeveelheid beweging
-  let volume = Math.min(nonZeroCount / 1000, 1); // Volume afhankelijk van beweging
+function updateSoundBasedOnPose(pose) {
+  if (pose.keypoints && pose.keypoints.length > 0) {
+    // Neem de positie van de rechterhand (index 10)
+    const rightWrist = pose.keypoints.find(point => point.name === "rightWrist");
+    
+    if (rightWrist && rightWrist.score > 0.5) {
+      // Stel de frequentie en het volume in op basis van de afstand van de rechterhand
+      let frequency = 500 + rightWrist.position.y * 0.5;  // Stel de frequentie in op basis van de Y-positie van de hand
+      let volume = Math.min(1, rightWrist.position.y / 300); // Stel het volume in op basis van de Y-positie van de hand
 
-  oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-  gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+    }
+  }
 }
 
-// Start motion tracking
-function startTracking() {
-  let mat = cv.imread(video);  // Converteer video-frame naar OpenCV matrix
-  let gray = new cv.Mat();
-  let motion = new cv.Mat();
+// Functie voor pose-detectie
+async function detectPose() {
+  const pose = await detector.estimatePoses(video);
   
-  // Zet het beeld om naar grijswaarden
-  cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+  if (pose.length > 0) {
+    const keypoints = pose[0].keypoints;
+    
+    // Teken de pose op het canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    keypoints.forEach(point => {
+      if (point.score > 0.5) {
+        ctx.beginPath();
+        ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = "red";
+        ctx.fill();
+      }
+    });
+    
+    // Update geluid op basis van pose
+    updateSoundBasedOnPose(pose[0]);
+  }
   
-  // Bereken het verschil tussen frames voor beweging
-  cv.absdiff(gray, prevGray, motion);
-  
-  // Detecteer beweging (drempelwaarde voor beweging)
-  cv.threshold(motion, motion, 25, 255, cv.THRESH_BINARY);
-  
-  // Teken het resultaat
-  cv.imshow('canvasOutput', motion);
-  
-  // Update vorige frame
-  prevGray = gray.clone();
-  
-  // Update geluid op basis van beweging
-  updateSoundBasedOnMotion(motion);
-  
-  // Vraag de functie opnieuw aan
-  requestAnimationFrame(startTracking);
+  requestAnimationFrame(detectPose);
 }
-
-// Initialiseer variabelen en start tracking
-let prevGray = new cv.Mat();

@@ -1,3 +1,4 @@
+// Verkrijg de video en canvas elementen
 let video = document.getElementById('videoInput');
 let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
@@ -11,7 +12,6 @@ navigator.mediaDevices.getUserMedia({
     
     // Wacht totdat de video geladen is en stel de canvas afmetingen in
     video.onloadedmetadata = function () {
-      // Stel de canvas afmetingen in op de video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
     }

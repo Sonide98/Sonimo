@@ -95,7 +95,7 @@ function createPercussionSound() {
     return { oscillator: osc, gainNode: gain };
 }
 
-// Updated function to detect walking motion
+// Updated detectWalkingMotion function with more sensitive thresholds
 function detectWalkingMotion(landmarks) {
     const leftHip = landmarks[23];
     const rightHip = landmarks[24];
@@ -108,24 +108,37 @@ function detectWalkingMotion(landmarks) {
         return { leftStep: false, rightStep: false };
     }
 
-    // Calculate leg movement relative to hip position
+    // Calculate leg movements
     const leftLegMovement = Math.abs((leftAnkle.y - leftHip.y) - (leftKnee.y - leftHip.y));
     const rightLegMovement = Math.abs((rightAnkle.y - rightHip.y) - (rightKnee.y - rightHip.y));
 
-    // More sensitive thresholds that work at different distances
     return {
-        leftStep: leftLegMovement > 0.02 && leftAnkle.visibility > 0.5,
-        rightStep: rightLegMovement > 0.02 && rightAnkle.visibility > 0.5
+        leftStep: leftLegMovement > 0.015 && leftAnkle.visibility > 0.5,  // More sensitive threshold
+        rightStep: rightLegMovement > 0.015 && rightAnkle.visibility > 0.5
     };
 }
 
-// Updated playPercussion function
-function playPercussion(gainNode, frequency, maxVolume = 0.3) {
-    const now = audioContext.currentTime;
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(maxVolume, now + 0.01);
-    gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+// Add function to detect arm movements
+function detectArmMovements(landmarks) {
+    const leftShoulder = landmarks[11];
+    const rightShoulder = landmarks[12];
+    const leftElbow = landmarks[13];
+    const rightElbow = landmarks[14];
+    const leftWrist = landmarks[15];
+    const rightWrist = landmarks[16];
+
+    if (!leftShoulder || !rightShoulder || !leftElbow || !rightElbow || !leftWrist || !rightWrist) {
+        return { leftArm: false, rightArm: false };
+    }
+
+    // Detect significant arm movements
+    const leftArmMovement = Math.abs(leftWrist.y - leftShoulder.y);
+    const rightArmMovement = Math.abs(rightWrist.y - rightShoulder.y);
+
+    return {
+        leftArm: leftArmMovement > 0.1 && leftWrist.visibility > 0.5,
+        rightArm: rightArmMovement > 0.1 && rightWrist.visibility > 0.5
+    };
 }
 
 // Updated updateSoundBasedOnPose function
@@ -133,20 +146,33 @@ function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
     const { leftStep, rightStep } = detectWalkingMotion(landmarks);
+    const { leftArm, rightArm } = detectArmMovements(landmarks);
     
-    // Trigger sounds with higher volumes
+    // Leg sounds
     if (leftStep !== lastLeftStep && leftStep) {
-        playPercussion(leftLegOsc.gainNode, 200, 0.8); // Increased volume
-        leftLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+        playPercussion(leftLegOsc.gainNode, 150, 0.9); // Bass drum sound
+        leftLegOsc.oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
     }
     if (rightStep !== lastRightStep && rightStep) {
-        playPercussion(rightLegOsc.gainNode, 250, 0.8); // Increased volume
-        rightLegOsc.oscillator.frequency.setValueAtTime(250, audioContext.currentTime);
+        playPercussion(rightLegOsc.gainNode, 200, 0.9); // Mid drum sound
+        rightLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+    }
+
+    // Arm sounds
+    if (leftArm !== lastLeftArm && leftArm) {
+        playPercussion(leftArmOsc.gainNode, 300, 0.7); // Higher percussion
+        leftArmOsc.oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
+    }
+    if (rightArm !== lastRightArm && rightArm) {
+        playPercussion(rightArmOsc.gainNode, 350, 0.7); // Highest percussion
+        rightArmOsc.oscillator.frequency.setValueAtTime(350, audioContext.currentTime);
     }
 
     // Update states
     lastLeftStep = leftStep;
     lastRightStep = rightStep;
+    lastLeftArm = leftArm;
+    lastRightArm = rightArm;
 }
 
 // Update the onResults function to draw connections between points
@@ -179,33 +205,38 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Create camera object
+// Create camera object with better resolution
 const camera = new window.Camera(video, {
     onFrame: async () => {
         await pose.send({image: video});
     },
-    width: 640,
-    height: 480
+    width: 1280,
+    height: 720
 });
 
 camera.start();
 
 // Updated audio initialization
 startButton.addEventListener('click', () => {
-    // Create new audio context
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
-    // Create percussion sounds for legs
+    // Create all oscillators
     leftLegOsc = createPercussionSound();
     rightLegOsc = createPercussionSound();
+    leftArmOsc = createPercussionSound();
+    rightArmOsc = createPercussionSound();
     
     // Set initial frequencies
-    leftLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-    rightLegOsc.oscillator.frequency.setValueAtTime(250, audioContext.currentTime);
+    leftLegOsc.oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+    rightLegOsc.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+    leftArmOsc.oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
+    rightArmOsc.oscillator.frequency.setValueAtTime(350, audioContext.currentTime);
     
-    // Start oscillators
+    // Start all oscillators
     leftLegOsc.oscillator.start();
     rightLegOsc.oscillator.start();
+    leftArmOsc.oscillator.start();
+    rightArmOsc.oscillator.start();
     
     startButton.disabled = true;
     startButton.textContent = 'Audio Running';

@@ -5,11 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Motion to Sound</title>
     <!-- MediaPipe Pose -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <style>
         video, canvas {
             width: 100%;
+            max-width: 640px;
             height: auto;
+            margin: 10px auto;
+            display: block;
         }
         body {
             text-align: center;
@@ -18,8 +23,9 @@
 </head>
 <body>
     <h1>Motion to Sound</h1>
-    <video id="videoInput" width="640" height="480" autoplay></video>
+    <video id="videoInput" width="640" height="480" autoplay playsinline></video>
     <canvas id="canvasOutput" width="640" height="480"></canvas>
+    <button id="startButton">Start Audio</button>
     <script src="app.js"></script>
 </body>
 </html>

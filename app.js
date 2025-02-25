@@ -2,8 +2,10 @@ let video = document.getElementById('videoInput');
 let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
 
-// Vraag toegang tot de camera
-navigator.mediaDevices.getUserMedia({ video: true })
+// Vraag toegang tot de camera en gebruik de achtercamera op mobiel
+navigator.mediaDevices.getUserMedia({
+  video: { facingMode: { exact: "environment" } }  // Achtercamera op mobiel
+})
   .then(function (stream) {
     video.srcObject = stream;
   }).catch(function (err) {
@@ -48,14 +50,16 @@ function updateSoundBasedOnPose(pose) {
 
 // Functie voor pose-detectie
 async function detectPose() {
-  const pose = await detector.estimatePoses(video);
+  const poses = await detector.estimatePoses(video);
   
-  if (pose.length > 0) {
-    const keypoints = pose[0].keypoints;
+  if (poses.length > 0) {
+    const keypoints = poses[0].keypoints;
     
     // Teken de pose op het canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Teken de keypoints (lichamelijke posities) op het canvas
     keypoints.forEach(point => {
       if (point.score > 0.5) {
         ctx.beginPath();
@@ -66,7 +70,7 @@ async function detectPose() {
     });
     
     // Update geluid op basis van pose
-    updateSoundBasedOnPose(pose[0]);
+    updateSoundBasedOnPose(poses[0]);
   }
   
   requestAnimationFrame(detectPose);

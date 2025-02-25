@@ -13,10 +13,10 @@ let leftLegOsc, rightLegOsc;
 let lastLeftStep = false;
 let lastRightStep = false;
 
-// Initialize camera with back camera (corrected version)
+// Initialize camera with back camera (forcing environment camera)
 navigator.mediaDevices.getUserMedia({
     video: {
-        facingMode: 'environment', // This is the correct way to request back camera
+        facingMode: { exact: "environment" }, // Force back camera
         width: { ideal: 640 },
         height: { ideal: 480 }
     }
@@ -27,6 +27,17 @@ navigator.mediaDevices.getUserMedia({
 })
 .catch(function(err) {
     console.error("Error accessing back camera: ", err);
+    // Fallback to any available camera if back camera fails
+    navigator.mediaDevices.getUserMedia({ 
+        video: { 
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+        } 
+    })
+    .then(function(stream) {
+        video.srcObject = stream;
+        video.play();
+    });
 });
 
 // Initialize MediaPipe Pose
@@ -96,15 +107,21 @@ function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
     // Leg points
+    const leftHip = landmarks[23];
+    const rightHip = landmarks[24];
     const leftAnkle = landmarks[27];
     const rightAnkle = landmarks[28];
     const leftKnee = landmarks[25];
     const rightKnee = landmarks[26];
 
-    if (leftAnkle && rightAnkle && leftKnee && rightKnee) {
-        // Detect stepping motion
-        const leftStep = leftKnee.y > leftAnkle.y && leftAnkle.visibility > 0.5;
-        const rightStep = rightKnee.y > rightAnkle.y && rightAnkle.visibility > 0.5;
+    if (leftAnkle && rightAnkle && leftKnee && rightKnee && leftHip && rightHip) {
+        // Calculate relative positions
+        const leftLegExtension = (leftAnkle.y - leftHip.y) / (leftKnee.y - leftHip.y);
+        const rightLegExtension = (rightAnkle.y - rightHip.y) / (rightKnee.y - rightHip.y);
+
+        // Detect stepping motion with more sensitive thresholds
+        const leftStep = leftLegExtension > 1.05 && leftAnkle.visibility > 0.5;
+        const rightStep = rightLegExtension > 1.05 && rightAnkle.visibility > 0.5;
 
         // Trigger sounds only on step transitions
         if (leftStep !== lastLeftStep && leftStep) {

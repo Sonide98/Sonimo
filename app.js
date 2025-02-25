@@ -15,47 +15,53 @@ let lastRightStep = false;
 let lastLeftArmRaised = false;
 let lastRightArmRaised = false;
 
-// Initialize camera with back camera (with multiple fallback options)
-navigator.mediaDevices.getUserMedia({
-    video: {
-        facingMode: { exact: "environment" },
-        width: { ideal: 640 },
-        height: { ideal: 480 }
-    }
-})
-.then(function(stream) {
-    video.srcObject = stream;
-    video.play();
-})
-.catch(function(err) {
-    console.error("First camera attempt failed, trying alternate method:", err);
-    // Try second method
-    navigator.mediaDevices.enumerateDevices()
-        .then(devices => {
-            const backCamera = devices.find(device => 
-                device.kind === 'videoinput' && 
-                !device.label.toLowerCase().includes('front'));
-            
-            if (backCamera) {
-                return navigator.mediaDevices.getUserMedia({
-                    video: {
-                        deviceId: { exact: backCamera.deviceId },
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }
-                });
-            } else {
-                throw new Error('No back camera found');
+// Function to get the back camera
+async function getBackCamera() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    
+    // Try to find the back camera
+    const backCamera = videoDevices.find(device => 
+        device.label.toLowerCase().includes('back') ||
+        device.label.toLowerCase().includes('environment') ||
+        device.label.toLowerCase().includes('rear'));
+    
+    return backCamera ? backCamera.deviceId : null;
+}
+
+// Initialize camera
+async function initializeCamera() {
+    try {
+        const backCameraId = await getBackCamera();
+        const constraints = {
+            video: backCameraId ? {
+                deviceId: { exact: backCameraId },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                facingMode: "environment"
+            } : {
+                facingMode: { exact: "environment" },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             }
-        })
-        .then(stream => {
-            video.srcObject = stream;
-            video.play();
-        })
-        .catch(err => {
-            console.error("All camera attempts failed:", err);
-        });
-});
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await video.play();
+        
+        // Set canvas size to match video
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        canvas.width = settings.width;
+        canvas.height = settings.height;
+    } catch (err) {
+        console.error("Camera initialization failed:", err);
+    }
+}
+
+// Call the initialization
+initializeCamera();
 
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
@@ -69,8 +75,8 @@ pose.setOptions({
     smoothLandmarks: true,
     enableSegmentation: false,
     smoothSegmentation: false,
-    minDetectionConfidence: 0.6,
-    minTrackingConfidence: 0.6
+    minDetectionConfidence: 0.5,  // Lowered for better detection
+    minTrackingConfidence: 0.5    // Lowered for better tracking
 });
 
 // Create percussion sound
@@ -93,67 +99,74 @@ function createPercussionSound() {
     return { oscillator: osc, gainNode: gain };
 }
 
-// Play a percussion hit
-function playPercussion(gainNode, frequency) {
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+// Updated function to detect walking motion
+function detectWalkingMotion(landmarks) {
+    const leftHip = landmarks[23];
+    const rightHip = landmarks[24];
+    const leftKnee = landmarks[25];
+    const rightKnee = landmarks[26];
+    const leftAnkle = landmarks[27];
+    const rightAnkle = landmarks[28];
+
+    if (!leftHip || !rightHip || !leftKnee || !rightKnee || !leftAnkle || !rightAnkle) {
+        return { leftStep: false, rightStep: false };
+    }
+
+    // Calculate leg movement relative to hip position
+    const leftLegMovement = Math.abs((leftAnkle.y - leftHip.y) - (leftKnee.y - leftHip.y));
+    const rightLegMovement = Math.abs((rightAnkle.y - rightHip.y) - (rightKnee.y - rightHip.y));
+
+    // More sensitive thresholds that work at different distances
+    return {
+        leftStep: leftLegMovement > 0.02 && leftAnkle.visibility > 0.5,
+        rightStep: rightLegMovement > 0.02 && rightAnkle.visibility > 0.5
+    };
 }
 
-// Updated function to create rhythmic sounds from body movement
+// Updated function for sound generation
 function updateSoundBasedOnPose(landmarks) {
     if (!audioContext || !landmarks || landmarks.length === 0) return;
 
-    // Body points
-    const leftHip = landmarks[23];
-    const rightHip = landmarks[24];
-    const leftAnkle = landmarks[27];
-    const rightAnkle = landmarks[28];
-    const leftKnee = landmarks[25];
-    const rightKnee = landmarks[26];
+    const { leftStep, rightStep } = detectWalkingMotion(landmarks);
+    
+    // Arm detection
     const leftWrist = landmarks[15];
     const rightWrist = landmarks[16];
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
 
-    if (leftAnkle && rightAnkle && leftKnee && rightKnee && leftHip && rightHip) {
-        // Calculate relative positions for legs
-        const leftLegExtension = (leftAnkle.y - leftHip.y) / (leftKnee.y - leftHip.y);
-        const rightLegExtension = (rightAnkle.y - rightHip.y) / (rightKnee.y - rightHip.y);
+    const leftArmRaised = leftWrist && leftShoulder && 
+        (leftWrist.y < leftShoulder.y) && leftWrist.visibility > 0.5;
+    const rightArmRaised = rightWrist && rightShoulder && 
+        (rightWrist.y < rightShoulder.y) && rightWrist.visibility > 0.5;
 
-        // More sensitive thresholds for leg movement
-        const leftStep = leftLegExtension > 1.02 && leftAnkle.visibility > 0.5;
-        const rightStep = rightLegExtension > 1.02 && rightAnkle.visibility > 0.5;
-
-        // Arm movements
-        const leftArmRaised = leftWrist && leftShoulder && 
-            (leftWrist.y < leftShoulder.y) && leftWrist.visibility > 0.5;
-        const rightArmRaised = rightWrist && rightShoulder && 
-            (rightWrist.y < rightShoulder.y) && rightWrist.visibility > 0.5;
-
-        // Trigger leg sounds
-        if (leftStep !== lastLeftStep && leftStep) {
-            playPercussion(leftLegOsc.gainNode, 200); // Bass drum sound
-        }
-        if (rightStep !== lastRightStep && rightStep) {
-            playPercussion(rightLegOsc.gainNode, 250); // Slightly higher drum
-        }
-
-        // Trigger arm sounds
-        if (leftArmRaised !== lastLeftArmRaised && leftArmRaised) {
-            playPercussion(leftArmOsc.gainNode, 400); // Higher percussion
-        }
-        if (rightArmRaised !== lastRightArmRaised && rightArmRaised) {
-            playPercussion(rightArmOsc.gainNode, 350); // Mid-high percussion
-        }
-
-        // Update states
-        lastLeftStep = leftStep;
-        lastRightStep = rightStep;
-        lastLeftArmRaised = leftArmRaised;
-        lastRightArmRaised = rightArmRaised;
+    // Trigger sounds
+    if (leftStep !== lastLeftStep && leftStep) {
+        playPercussion(leftLegOsc.gainNode, 200, 0.5); // Increased volume
     }
+    if (rightStep !== lastRightStep && rightStep) {
+        playPercussion(rightLegOsc.gainNode, 250, 0.5); // Increased volume
+    }
+    if (leftArmRaised !== lastLeftArmRaised && leftArmRaised) {
+        playPercussion(leftArmOsc.gainNode, 400, 0.3);
+    }
+    if (rightArmRaised !== lastRightArmRaised && rightArmRaised) {
+        playPercussion(rightArmOsc.gainNode, 350, 0.3);
+    }
+
+    // Update states
+    lastLeftStep = leftStep;
+    lastRightStep = rightStep;
+    lastLeftArmRaised = leftArmRaised;
+    lastRightArmRaised = rightArmRaised;
+}
+
+// Updated percussion function with volume parameter
+function playPercussion(gainNode, frequency, maxVolume = 0.3) {
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(maxVolume, audioContext.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
 }
 
 // Update the onResults function to draw connections between points

@@ -12,67 +12,76 @@ navigator.mediaDevices.getUserMedia({
     console.error("Error accessing webcam/camera: " + err);
   });
 
-// Laad het pose model van TensorFlow.js
-let detector;
-(async () => {
-  detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
-  detectPose();
-})();
+// Laad MediaPipe Pose
+const pose = new window.mediapipe.pose.Pose({
+  locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.3/${file}`;
+  }
+});
 
-// Web Audio API voor geluid genereren
+pose.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  enableSegmentation: true,
+  smoothSegmentation: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
+});
+
+// Audio context voor geluid genereren
 let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let oscillator = audioContext.createOscillator();
 let gainNode = audioContext.createGain();
 
-// Verbind oscillator en gain
 oscillator.connect(gainNode);
 gainNode.connect(audioContext.destination);
-
-// Start de oscillator (een eenvoudige toon)
 oscillator.start();
 
-// Functie om geluid te wijzigen op basis van beweging
-function updateSoundBasedOnPose(pose) {
-  if (pose.keypoints && pose.keypoints.length > 0) {
-    // Neem de positie van de rechterhand (index 10)
-    const rightWrist = pose.keypoints.find(point => point.name === "rightWrist");
-    
-    if (rightWrist && rightWrist.score > 0.5 && rightWrist.position) {
-      // Stel de frequentie en het volume in op basis van de afstand van de rechterhand
-      let frequency = 500 + rightWrist.position.y * 0.5;  // Stel de frequentie in op basis van de Y-positie van de hand
-      let volume = Math.min(1, rightWrist.position.y / 300); // Stel het volume in op basis van de Y-positie van de hand
+// Functie om geluid te wijzigen op basis van lichaamsbeweging
+function updateSoundBasedOnPose(landmarks) {
+  if (landmarks && landmarks.length > 0) {
+    const nose = landmarks[0]; // We gebruiken de neus als referentiepunt (of kies een ander belangrijk punt)
+    const leftShoulder = landmarks[11];
+    const rightShoulder = landmarks[12];
 
-      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-    }
+    // Stel de frequentie in op basis van de y-positie van de neus
+    let frequency = 500 + nose.y * 0.5;
+    let volume = Math.min(1, Math.abs(leftShoulder.y - rightShoulder.y) / 300); // Volume aanpassen op basis van schouderbeweging
+
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
   }
 }
 
-// Functie voor pose-detectie
-async function detectPose() {
-  const poses = await detector.estimatePoses(video);
-  
-  if (poses.length > 0) {
-    const keypoints = poses[0].keypoints;
-    
-    // Teken de pose op het canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Teken de keypoints (lichamelijke posities) op het canvas
-    keypoints.forEach(point => {
-      // Check of het keypoint valide is voordat je toegang krijgt tot position
-      if (point && point.position && point.score > 0.5) {
+// Verwerken van de pose
+function onResults(results) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+  // Teken de keypoints (lichamelijke posities) op het canvas
+  if (results.poseLandmarks) {
+    results.poseLandmarks.forEach((point) => {
+      if (point.visibility > 0.5) {
         ctx.beginPath();
-        ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
+        ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
         ctx.fillStyle = "red";
         ctx.fill();
       }
     });
-    
-    // Update geluid op basis van pose
-    updateSoundBasedOnPose(poses[0]);
+
+    // Update het geluid op basis van de lichaamsbewegingen
+    updateSoundBasedOnPose(results.poseLandmarks);
   }
-  
+}
+
+// Start de pose-detectie
+pose.onResults(onResults);
+
+// Start de detectie in een loop
+async function detectPose() {
+  await pose.send({image: video});
   requestAnimationFrame(detectPose);
 }
+
+detectPose();  // Start detecteren
+

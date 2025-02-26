@@ -14,7 +14,7 @@ let gainNode = null;
 let noiseNode = null; // For percussive sounds
 
 // Initialize MediaPipe Pose
-const pose = new window.Pose({
+const pose = new Pose({
     locateFile: (file) => {
         return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
     }
@@ -56,6 +56,7 @@ async function initCamera() {
         }
 
         video.srcObject = stream;
+        video.setAttribute('playsinline', ''); // Important for iOS
         await video.play();
 
         // Get actual video dimensions
@@ -69,16 +70,14 @@ async function initCamera() {
         canvas.width = containerWidth;
         canvas.height = containerHeight;
 
-        // Initialize MediaPipe camera with video dimensions
-        const camera = new window.Camera(video, {
+        // Set up the camera utility
+        const cameraUtils = new Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
-            },
-            width: videoWidth,
-            height: videoHeight
+            }
         });
 
-        camera.start();
+        await cameraUtils.start();
         statusDiv.textContent = 'Camera ready - click Start Audio';
         startButton.disabled = false;
 
@@ -203,16 +202,14 @@ function detectMotions(landmarks) {
 
 // Process pose detection results
 function onResults(results) {
-    // Ensure canvas context is in the correct state
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw the camera feed
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
         // Draw skeleton with more visible colors
-        window.drawConnectors(ctx, results.poseLandmarks, window.POSE_CONNECTIONS,
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
             {color: '#00FF00', lineWidth: 4});
             
         // Draw landmarks with larger, more visible points
@@ -222,7 +219,7 @@ function onResults(results) {
                 ctx.arc(
                     point.x * canvas.width, 
                     point.y * canvas.height, 
-                    6, // Increased point size
+                    6,
                     0, 
                     2 * Math.PI
                 );

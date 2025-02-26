@@ -34,21 +34,21 @@ async function initCamera() {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
-                width: { ideal: 720 },
-                height: { ideal: 1280 }
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
             }
         });
 
         video.srcObject = stream;
         video.setAttribute('playsinline', '');
-        video.style.display = 'block';
+        video.style.display = 'none'; // Hide video element, we will draw on canvas
         
         // Wait for video to be ready
         await video.play();
 
         // Set canvas size
-        canvas.width = video.videoWidth || 720;
-        canvas.height = video.videoHeight || 1280;
+        canvas.width = 480; // Set to match the container width
+        canvas.height = 854; // Set to match the 9:16 aspect ratio
 
         // Initialize MediaPipe camera
         const camera = new window.Camera(video, {

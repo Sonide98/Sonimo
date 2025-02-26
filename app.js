@@ -274,4 +274,3 @@ startButton.addEventListener('click', async () => {
         startButton.textContent = 'Start Audio';
     }
 });
-

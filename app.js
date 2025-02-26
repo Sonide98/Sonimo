@@ -12,6 +12,12 @@ let compressor;
 let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 let isAudioInitialized = false;
 
+// Simplified audio files (near the top of your file)
+const audioFiles = {
+    legs: new Audio('sounds/kick.wav'),
+    arms: new Audio('sounds/clap.wav')
+};
+
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
     locateFile: (file) => {
@@ -76,33 +82,16 @@ async function initCamera() {
 }
 
 // Improved audio initialization
-async function initializeAudio() {
+function initializeAudio() {
     try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        await audioContext.resume();
-
-        // Create audio nodes
-        oscillator = audioContext.createOscillator();
-        gainNode = audioContext.createGain();
-        compressor = audioContext.createDynamicsCompressor();
-
-        // Configure compressor
-        compressor.threshold.value = -24;
-        compressor.knee.value = 30;
-        compressor.ratio.value = 12;
-        compressor.attack.value = 0.003;
-        compressor.release.value = 0.25;
-
-        // Configure oscillator
-        oscillator.type = 'triangle';
-        oscillator.connect(compressor);
-        compressor.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        oscillator.start();
+        // Pre-load the audio files
+        audioFiles.legs.load();
+        audioFiles.arms.load();
         
-        isAudioInitialized = true;
+        // Set initial volumes
+        audioFiles.legs.volume = 0.8;
+        audioFiles.arms.volume = 0.8;
+        
         statusDiv.textContent = 'Audio system ready';
         return true;
     } catch (error) {
@@ -112,31 +101,22 @@ async function initializeAudio() {
     }
 }
 
-// Improved sound triggering
-function triggerSound(frequency, velocity) {
-    if (!isAudioInitialized) return;
+// New function to play audio files with velocity-based volume
+function playSound(soundType, velocity) {
+    const audio = audioFiles[soundType];
+    if (!audio) return;
+
+    // Set volume based on movement velocity
+    audio.volume = Math.min(1.0, velocity * 3); // Increased multiplier for better response
     
-    try {
-        const now = audioContext.currentTime;
-        
-        // Smooth frequency transition
-        oscillator.frequency.setTargetAtTime(frequency, now, 0.03);
-        
-        // Dynamic volume based on velocity
-        const volume = Math.min(0.4, velocity * 1.5);
-        
-        // Quick attack, natural decay
-        gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-        gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-        gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
-    } catch (error) {
-        console.error('Sound trigger error:', error);
-    }
+    // Reset audio to start if it's already playing
+    audio.currentTime = 0;
+    
+    // Play the sound
+    audio.play().catch(e => console.log('Audio play error:', e));
 }
 
-// Improved motion detection
+// Adjust motion detection to be more sensitive
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -145,15 +125,18 @@ function detectMotions(landmarks) {
         rightArm: { moving: false, velocity: 0 }
     };
 
-    const smoothingFactor = 0.3;
-    const movementThreshold = 0.03;
-    const visibilityThreshold = 0.6;
+    const smoothingFactor = 0.4; // Increased from 0.3
+    const movementThreshold = 0.015; // Reduced from 0.03
+    const visibilityThreshold = 0.5; // Reduced from 0.6
 
     function calculateMovement(point1, point2, lastPos, id) {
         if (!point1 || !point2 || point1.visibility < visibilityThreshold) return { moving: false, velocity: 0 };
         
-        const currentPos = Math.abs(point1.y - point2.y);
-        const velocity = Math.abs(currentPos - lastPos) * smoothingFactor;
+        // Calculate movement based on both X and Y coordinates for better detection
+        const currentPosY = Math.abs(point1.y - point2.y);
+        const currentPosX = Math.abs(point1.x - point2.x);
+        const movement = Math.sqrt(currentPosX * currentPosX + currentPosY * currentPosY);
+        const velocity = Math.abs(movement - lastPos) * smoothingFactor;
         const moving = velocity > movementThreshold;
         
         return { moving, velocity };
@@ -177,7 +160,7 @@ function detectMotions(landmarks) {
     return result;
 }
 
-// Process results
+// Update the results processing to use audio files
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
@@ -200,17 +183,16 @@ function onResults(results) {
         // Process motion and trigger sounds
         const motions = detectMotions(results.poseLandmarks);
         
-        if (motions.leftLeg.moving) {
-            triggerSound(196.00, motions.leftLeg.velocity);  // G3
+        // Combine leg movements
+        if (motions.leftLeg.moving || motions.rightLeg.moving) {
+            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity);
+            playSound('legs', velocity);
         }
-        if (motions.rightLeg.moving) {
-            triggerSound(246.94, motions.rightLeg.velocity); // B3
-        }
-        if (motions.leftArm.moving) {
-            triggerSound(293.66, motions.leftArm.velocity);  // D4
-        }
-        if (motions.rightArm.moving) {
-            triggerSound(349.23, motions.rightArm.velocity); // F4
+        
+        // Combine arm movements
+        if (motions.leftArm.moving || motions.rightArm.moving) {
+            const velocity = Math.max(motions.leftArm.velocity, motions.rightArm.velocity);
+            playSound('arms', velocity);
         }
     }
 }

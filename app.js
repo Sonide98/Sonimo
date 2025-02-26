@@ -30,36 +30,36 @@ pose.setOptions({
 // Camera initialization
 async function initCamera() {
     try {
-        // Request camera access
+        // Request camera access with more specific constraints
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                facingMode: 'environment',
+                facingMode: { ideal: 'environment' },
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
             }
         });
 
         video.srcObject = stream;
-        video.setAttribute('playsinline', '');
-        video.style.display = 'none'; // Hide video element, we will draw on canvas
+        video.play();
+
+        // Adjust canvas size based on video dimensions
+        const videoAspectRatio = 16/9;
+        const containerWidth = canvas.parentElement.clientWidth;
+        const containerHeight = containerWidth * videoAspectRatio;
         
-        // Wait for video to be ready
-        await video.play();
+        canvas.width = containerWidth;
+        canvas.height = containerHeight;
 
-        // Set canvas size
-        canvas.width = 480; // Set to match the container width
-        canvas.height = 854; // Set to match the 9:16 aspect ratio
-
-        // Initialize MediaPipe camera
+        // Initialize MediaPipe camera with correct dimensions
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: canvas.width,
-            height: canvas.height
+            width: containerWidth,
+            height: containerHeight
         });
 
-        await camera.start();
+        camera.start();
         statusDiv.textContent = 'Camera ready - click Start Audio';
         startButton.disabled = false;
 
@@ -153,20 +153,30 @@ function detectMotions(landmarks) {
 
 // Process pose detection results
 function onResults(results) {
+    // Ensure canvas context is in the correct state
+    ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw the camera feed
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
-        // Draw skeleton
-        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
-            {color: '#00FF00', lineWidth: 2});
+        // Draw skeleton with more visible colors
+        window.drawConnectors(ctx, results.poseLandmarks, window.POSE_CONNECTIONS,
+            {color: '#00FF00', lineWidth: 4});
             
-        // Draw landmarks
+        // Draw landmarks with larger, more visible points
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
-                ctx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
-                ctx.fillStyle = "red";
+                ctx.arc(
+                    point.x * canvas.width, 
+                    point.y * canvas.height, 
+                    6, // Increased point size
+                    0, 
+                    2 * Math.PI
+                );
+                ctx.fillStyle = "#FF0000";
                 ctx.fill();
             }
         });
@@ -184,6 +194,8 @@ function onResults(results) {
             playSound('arms', velocity);
         }
     }
+    
+    ctx.restore();
 }
 
 // Initialize everything

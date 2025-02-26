@@ -40,13 +40,22 @@ let cameraUtils = null;
 // Camera initialization
 async function initCamera() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { exact: 'environment' },
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            }
-        });
+        // First try without exact constraint
+        let stream = null;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment',  // Removed 'exact' constraint
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+        } catch (err) {
+            console.log('Failed with environment camera, trying any camera:', err);
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+        }
 
         video.srcObject = stream;
         video.setAttribute('playsinline', '');
@@ -61,13 +70,17 @@ async function initCamera() {
         canvas.width = containerWidth;
         canvas.height = containerHeight;
 
-        cameraUtils = new Camera(video, {
+        // Make sure pose is properly initialized before creating camera utility
+        await pose.initialize();
+
+        // Create camera utility
+        const camera = new Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             }
         });
 
-        await cameraUtils.start();
+        await camera.start();
         statusDiv.textContent = 'Camera ready - click Start Audio';
         startButton.disabled = false;
 
@@ -261,11 +274,19 @@ function onResults(results) {
 
 // Initialize everything
 async function init() {
-    startButton.disabled = true;
-    statusDiv.textContent = 'Initializing...';
-    
-    pose.onResults(onResults);
-    await initCamera();
+    try {
+        startButton.disabled = true;
+        statusDiv.textContent = 'Initializing...';
+        
+        // Set up pose detection
+        pose.onResults(onResults);
+        
+        // Initialize camera
+        await initCamera();
+    } catch (error) {
+        console.error("Initialization error:", error);
+        statusDiv.textContent = 'Failed to initialize - please refresh';
+    }
 }
 
 // Start initialization

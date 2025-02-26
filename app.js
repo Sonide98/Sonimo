@@ -153,27 +153,36 @@ function playSound(soundType, velocity) {
     lastSoundTime = now;
 
     // Set base frequency based on movement type
-    const baseFreq = soundType === 'legs' ? 100 : 200;
+    const baseFreq = soundType === 'legs' ? 150 : 350;  // Increased both frequencies
     oscillator.frequency.setValueAtTime(baseFreq, now);
     
     // Adjust filter for noise based on movement type
     filterNode.frequency.setValueAtTime(
-        soundType === 'legs' ? 400 : 800,
+        soundType === 'legs' ? 600 : 1000,  // Increased filter frequencies
         now
     );
-    filterNode.Q.setValueAtTime(velocity * 3 + 1, now);
+    filterNode.Q.setValueAtTime(velocity * 4 + 1, now);  // Increased resonance
 
     // Percussive envelope for noise (main sound)
     noiseGainNode.gain.cancelScheduledValues(now);
     noiseGainNode.gain.setValueAtTime(0, now);
-    const noiseVelocity = Math.min(velocity * 0.8, 0.9);  // Stronger noise
-    noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
-    noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    
+    if (soundType === 'legs') {
+        // Stronger noise for legs
+        const noiseVelocity = Math.min(velocity * 1.2, 1.0);  // Increased leg volume
+        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
+        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    } else {
+        // Original noise for arms
+        const noiseVelocity = Math.min(velocity * 0.8, 0.9);
+        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
+        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    }
 
     // Subtle harmonic envelope (background sound)
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setValueAtTime(0, now);
-    const harmonyVelocity = Math.min(velocity * 0.15, 0.2);  // Much quieter harmony
+    const harmonyVelocity = Math.min(velocity * 0.2, 0.25);  // Slightly increased harmony
     gainNode.gain.linearRampToValueAtTime(harmonyVelocity, now + 0.02);
     gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 }
@@ -255,11 +264,11 @@ function onResults(results) {
             }
         });
 
-        // Process movements with increased velocity scaling
+        // Process movements with adjusted velocity scaling
         const motions = detectMotions(results.poseLandmarks);
         
         if (motions.leftLeg.moving || motions.rightLeg.moving) {
-            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity) * 1.5;
+            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity) * 2.0; // Increased from 1.5
             playSound('legs', velocity);
         }
         

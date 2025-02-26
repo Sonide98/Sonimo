@@ -2,12 +2,15 @@ let video = document.getElementById('videoInput');
 let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
 let startButton = document.getElementById('startButton');
+let statusDiv = document.getElementById('status');
 
 // Audio variables
 let audioContext;
 let oscillator;
 let gainNode;
+let compressor;
 let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
+let isAudioInitialized = false;
 
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
@@ -23,22 +26,66 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera
+// Initialize camera with multiple fallback options
 async function initCamera() {
     try {
-        const constraints = {
-            video: {
-                facingMode: { exact: 'environment' },
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                zoom: 1
-            }
-        };
-
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = stream;
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
         
-        // Wait for video to be ready
+        let stream;
+        
+        // Try different camera initialization methods
+        for (const method of [
+            // Method 1: Try to find and use back camera by label
+            async () => {
+                const backCamera = videoDevices.find(d => 
+                    d.label.toLowerCase().includes('back') || 
+                    d.label.toLowerCase().includes('rear'));
+                if (backCamera) {
+                    return await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            deviceId: { exact: backCamera.deviceId },
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 }
+                        }
+                    });
+                }
+                throw new Error('Back camera not found');
+            },
+            // Method 2: Try environment facing mode
+            async () => {
+                return await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { exact: 'environment' },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+            },
+            // Method 3: Try simple environment mode
+            async () => {
+                return await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+            }
+        ]) {
+            try {
+                stream = await method();
+                if (stream) break;
+            } catch (e) {
+                console.log('Camera method failed, trying next...');
+            }
+        }
+
+        if (!stream) {
+            throw new Error('Could not initialize camera');
+        }
+
+        video.srcObject = stream;
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
                 video.play();
@@ -46,65 +93,92 @@ async function initCamera() {
             };
         });
 
-        // Set canvas size
-        canvas.width = 640;
-        canvas.height = 480;
+        // Set canvas size to match video
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        canvas.width = settings.width;
+        canvas.height = settings.height;
 
-        // Start MediaPipe camera
+        statusDiv.textContent = 'Camera ready';
+        
+        // Initialize MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: 640,
-            height: 480
+            width: settings.width,
+            height: settings.height
         });
         camera.start();
 
     } catch (err) {
         console.error("Camera error:", err);
+        statusDiv.textContent = 'Camera initialization failed';
     }
 }
 
-// Create sound with simpler setup
-function createSound() {
+// Improved audio initialization
+async function initializeAudio() {
     try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume();
+
+        // Create audio nodes
         oscillator = audioContext.createOscillator();
         gainNode = audioContext.createGain();
-        
+        compressor = audioContext.createDynamicsCompressor();
+
+        // Configure compressor
+        compressor.threshold.value = -24;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+
+        // Configure oscillator
         oscillator.type = 'triangle';
-        oscillator.connect(gainNode);
+        oscillator.connect(compressor);
+        compressor.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
+
         gainNode.gain.setValueAtTime(0, audioContext.currentTime);
         oscillator.start();
-        console.log('Sound created successfully');
+        
+        isAudioInitialized = true;
+        statusDiv.textContent = 'Audio system ready';
+        return true;
     } catch (error) {
-        console.error('Error creating sound:', error);
+        console.error('Audio initialization failed:', error);
+        statusDiv.textContent = 'Audio initialization failed';
+        return false;
     }
 }
 
-// Simplified sound trigger
+// Improved sound triggering
 function triggerSound(frequency, velocity) {
-    if (!audioContext || !oscillator || !gainNode) {
-        console.log('Audio not ready');
-        return;
-    }
+    if (!isAudioInitialized) return;
     
     try {
         const now = audioContext.currentTime;
-        oscillator.frequency.setValueAtTime(frequency, now);
         
-        const volume = Math.min(0.5, velocity * 2);
+        // Smooth frequency transition
+        oscillator.frequency.setTargetAtTime(frequency, now, 0.03);
+        
+        // Dynamic volume based on velocity
+        const volume = Math.min(0.4, velocity * 1.5);
+        
+        // Quick attack, natural decay
         gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
-        gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
+        gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
     } catch (error) {
-        console.error('Error triggering sound:', error);
+        console.error('Sound trigger error:', error);
     }
 }
 
-// Motion detection
+// Improved motion detection
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -112,41 +186,36 @@ function detectMotions(landmarks) {
         leftArm: { moving: false, velocity: 0 },
         rightArm: { moving: false, velocity: 0 }
     };
-    
-    const leftAnkle = landmarks[27];
-    const rightAnkle = landmarks[28];
-    const leftKnee = landmarks[25];
-    const rightKnee = landmarks[26];
-    const leftWrist = landmarks[15];
-    const rightWrist = landmarks[16];
-    const leftShoulder = landmarks[11];
-    const rightShoulder = landmarks[12];
-    
-    const leftLegPos = Math.abs(leftAnkle.y - leftKnee.y);
-    const rightLegPos = Math.abs(rightAnkle.y - rightKnee.y);
-    const leftArmPos = Math.abs(leftWrist.y - leftShoulder.y);
-    const rightArmPos = Math.abs(rightWrist.y - rightShoulder.y);
-    
+
+    const smoothingFactor = 0.3;
+    const movementThreshold = 0.03;
+    const visibilityThreshold = 0.6;
+
+    function calculateMovement(point1, point2, lastPos, id) {
+        if (!point1 || !point2 || point1.visibility < visibilityThreshold) return { moving: false, velocity: 0 };
+        
+        const currentPos = Math.abs(point1.y - point2.y);
+        const velocity = Math.abs(currentPos - lastPos) * smoothingFactor;
+        const moving = velocity > movementThreshold;
+        
+        return { moving, velocity };
+    }
+
     const result = {
-        leftLeg: {
-            moving: leftLegPos > 0.04 && leftAnkle.visibility > 0.5,
-            velocity: Math.abs(leftLegPos - lastPositions.leftLeg)
-        },
-        rightLeg: {
-            moving: rightLegPos > 0.04 && rightAnkle.visibility > 0.5,
-            velocity: Math.abs(rightLegPos - lastPositions.rightLeg)
-        },
-        leftArm: {
-            moving: leftArmPos > 0.06 && leftWrist.visibility > 0.5,
-            velocity: Math.abs(leftArmPos - lastPositions.leftArm)
-        },
-        rightArm: {
-            moving: rightArmPos > 0.06 && rightWrist.visibility > 0.5,
-            velocity: Math.abs(rightArmPos - lastPositions.rightArm)
-        }
+        leftLeg: calculateMovement(landmarks[27], landmarks[25], lastPositions.leftLeg, 'leftLeg'),
+        rightLeg: calculateMovement(landmarks[28], landmarks[26], lastPositions.rightLeg, 'rightLeg'),
+        leftArm: calculateMovement(landmarks[15], landmarks[11], lastPositions.leftArm, 'leftArm'),
+        rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm, 'rightArm')
     };
-    
-    lastPositions = { leftLegPos, rightLegPos, leftArmPos, rightArmPos };
+
+    // Update last positions
+    lastPositions = {
+        leftLeg: Math.abs(landmarks[27].y - landmarks[25].y),
+        rightLeg: Math.abs(landmarks[28].y - landmarks[26].y),
+        leftArm: Math.abs(landmarks[15].y - landmarks[11].y),
+        rightArm: Math.abs(landmarks[16].y - landmarks[12].y)
+    };
+
     return result;
 }
 
@@ -156,9 +225,11 @@ function onResults(results) {
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
+        // Draw skeleton
         drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
             {color: '#00FF00', lineWidth: 2});
             
+        // Draw landmarks
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
@@ -168,19 +239,20 @@ function onResults(results) {
             }
         });
 
+        // Process motion and trigger sounds
         const motions = detectMotions(results.poseLandmarks);
         
         if (motions.leftLeg.moving) {
-            triggerSound(200, motions.leftLeg.velocity);
+            triggerSound(196.00, motions.leftLeg.velocity);  // G3
         }
         if (motions.rightLeg.moving) {
-            triggerSound(250, motions.rightLeg.velocity);
+            triggerSound(246.94, motions.rightLeg.velocity); // B3
         }
         if (motions.leftArm.moving) {
-            triggerSound(300, motions.leftArm.velocity);
+            triggerSound(293.66, motions.leftArm.velocity);  // D4
         }
         if (motions.rightArm.moving) {
-            triggerSound(350, motions.rightArm.velocity);
+            triggerSound(349.23, motions.rightArm.velocity); // F4
         }
     }
 }
@@ -191,19 +263,15 @@ pose.onResults(onResults);
 // Initialize everything
 initCamera();
 
-// Audio initialization
+// Audio initialization on button click
 startButton.addEventListener('click', async () => {
-    try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        await audioContext.resume();
-        createSound();
-        console.log('Audio initialized');
-        startButton.disabled = true;
+    startButton.disabled = true;
+    if (await initializeAudio()) {
         startButton.textContent = 'Audio Running';
-    } catch (error) {
-        console.error('Audio initialization failed:', error);
-        startButton.textContent = 'Start Audio';
+        statusDiv.textContent = 'System ready';
+    } else {
         startButton.disabled = false;
+        startButton.textContent = 'Start Audio';
     }
 });
 

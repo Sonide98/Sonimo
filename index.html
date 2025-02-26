@@ -75,6 +75,42 @@
         #switchCameraButton {
             display: none;
         }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #volumeSlider {
+            width: 200px;
+            height: 15px;
+        }
+        #toggleButton {
+            padding: 12px 24px;
+            font-size: 18px;
+            background: #b55d5d;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #toggleButton:hover {
+            background: #944b4b;
+            transform: scale(1.05);
+        }
+        #toggleButton:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
     </style>
 </head>
 <body>
@@ -84,7 +120,14 @@
         <video id="videoInput" playsinline></video>
         <canvas id="canvasOutput"></canvas>
     </div>
-    <button id="startButton">Start Audio</button>
+    <div class="controls">
+        <button id="startButton">Start Audio</button>
+        <button id="toggleButton" disabled>Stop Sound</button>
+        <div class="volume-control">
+            <label for="volumeSlider">Volume:</label>
+            <input type="range" id="volumeSlider" min="0" max="100" value="100" disabled>
+        </div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>

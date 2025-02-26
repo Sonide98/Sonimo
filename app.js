@@ -52,27 +52,48 @@ async function initCamera() {
             await cameraUtils.stop();
         }
 
+        // Get list of available video devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        console.log('Available video devices:', videoDevices);
+
         // Try to get camera with current facing mode
         let stream = null;
         try {
-            // For iOS, we need to be more specific with constraints
             const constraints = {
                 video: {
-                    facingMode: currentFacingMode,
                     width: { ideal: 640 },
                     height: { ideal: 480 }
                 }
             };
 
-            // If we specifically want back camera, use 'environment'
-            if (currentFacingMode === 'environment') {
-                constraints.video.facingMode = { exact: 'environment' };
+            // If we have multiple cameras, try to select the correct one
+            if (videoDevices.length > 1) {
+                if (currentFacingMode === 'environment') {
+                    // Try to get the back camera
+                    constraints.video.facingMode = { exact: 'environment' };
+                    // As fallback, try the last device (usually back camera on phones)
+                    if (videoDevices.length > 1) {
+                        constraints.video.deviceId = { exact: videoDevices[videoDevices.length - 1].deviceId };
+                    }
+                } else {
+                    // Try to get the front camera
+                    constraints.video.facingMode = { exact: 'user' };
+                    // As fallback, try the first device (usually front camera on phones)
+                    constraints.video.deviceId = { exact: videoDevices[0].deviceId };
+                }
             }
 
+            console.log('Trying constraints:', constraints);
             stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            // Log the track settings to verify which camera we got
+            const videoTrack = stream.getVideoTracks()[0];
+            console.log('Camera settings:', videoTrack.getSettings());
+
         } catch (err) {
-            console.log('Specific camera failed, trying fallback:', err);
-            // Fallback to any available camera
+            console.log('Specific camera failed, trying simple fallback:', err);
+            // Simple fallback
             stream = await navigator.mediaDevices.getUserMedia({
                 video: true
             });
@@ -108,7 +129,7 @@ async function initCamera() {
     } catch (err) {
         console.error("Camera error:", err);
         statusDiv.textContent = 'Camera failed - please refresh and allow camera access';
-        switchCameraButton.disabled = false; // Re-enable the button on error
+        switchCameraButton.disabled = false;
     }
 }
 
@@ -339,7 +360,7 @@ startButton.addEventListener('click', async () => {
     }
 });
 
-// Add camera switch handler
+// Update the camera switch handler
 switchCameraButton.addEventListener('click', async () => {
     try {
         switchCameraButton.disabled = true;
@@ -348,8 +369,8 @@ switchCameraButton.addEventListener('click', async () => {
         // Toggle facing mode
         currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
         
-        // Wait a brief moment before reinitializing camera
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Force a small delay to ensure previous camera is fully stopped
+        await new Promise(resolve => setTimeout(resolve, 300));
         await initCamera();
         
     } catch (error) {

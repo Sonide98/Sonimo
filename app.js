@@ -26,9 +26,13 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera
+// Update the camera initialization
 async function initCamera() {
     try {
+        // First try to get camera permission
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        
+        // Then try to get the back camera
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
@@ -37,18 +41,22 @@ async function initCamera() {
             }
         });
 
+        // Set up video element
         video.srcObject = stream;
-        video.setAttribute('playsinline', true);
+        video.setAttribute('playsinline', true); // important for iOS
         
+        // Wait for video to be ready
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
                 video.play().then(resolve);
             };
         });
 
+        // Set up canvas with fixed dimensions
         canvas.width = 1280;
         canvas.height = 720;
 
+        // Set up MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
@@ -57,7 +65,8 @@ async function initCamera() {
             height: 720
         });
 
-        camera.start();
+        // Start camera
+        await camera.start();
         statusDiv.textContent = 'Camera ready';
 
     } catch (err) {
@@ -175,13 +184,19 @@ function onResults(results) {
     }
 }
 
-// Set up pose detection
-pose.onResults(onResults);
+// Update the initialization sequence
+async function init() {
+    // First set up pose detection
+    pose.onResults(onResults);
+    
+    // Then initialize camera
+    await initCamera();
+}
 
-// Initialize camera
-initCamera();
+// Start initialization
+init();
 
-// Audio initialization on button click
+// Keep the audio button handler
 startButton.addEventListener('click', async () => {
     try {
         startButton.disabled = true;

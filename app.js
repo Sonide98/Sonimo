@@ -16,23 +16,23 @@ const audioFiles = {
 // Initialize audio files with error handling
 function loadAudioFiles() {
     try {
-        audioFiles.legs = new Audio('sounds/kick.wav');
-        audioFiles.arms = new Audio('sounds/clap.wav');
+        audioFiles.legs = new Audio('sounds/Kick.wav');
+        audioFiles.arms = new Audio('sounds/Clap.wav');
         
         // Add event listeners for debugging
         audioFiles.legs.addEventListener('error', (e) => {
-            console.error('Error loading kick.wav:', e);
+            console.error('Error loading Kick.wav:', e);
         });
         audioFiles.arms.addEventListener('error', (e) => {
-            console.error('Error loading clap.wav:', e);
+            console.error('Error loading Clap.wav:', e);
         });
 
         // Log successful loading
         audioFiles.legs.addEventListener('loadeddata', () => {
-            console.log('kick.wav loaded successfully');
+            console.log('Kick.wav loaded successfully');
         });
         audioFiles.arms.addEventListener('loadeddata', () => {
-            console.log('clap.wav loaded successfully');
+            console.log('Clap.wav loaded successfully');
         });
 
         return true;

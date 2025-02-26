@@ -7,40 +7,28 @@ let statusDiv = document.getElementById('status');
 // Track last positions for movement detection
 let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
-// Audio files setup with error checking
+// Audio files setup
 const audioFiles = {
-    legs: null,
-    arms: null
+    legs: new Audio('sounds/Kick.wav'),
+    arms: new Audio('sounds/Clap.wav')
 };
 
-// Initialize audio files with error handling
-function loadAudioFiles() {
-    try {
-        audioFiles.legs = new Audio('sounds/Kick.wav');
-        audioFiles.arms = new Audio('sounds/Clap.wav');
-        
-        // Add event listeners for debugging
-        audioFiles.legs.addEventListener('error', (e) => {
-            console.error('Error loading Kick.wav:', e);
-        });
-        audioFiles.arms.addEventListener('error', (e) => {
-            console.error('Error loading Clap.wav:', e);
-        });
+// Test audio file paths on load
+window.addEventListener('load', () => {
+    fetch('sounds/Kick.wav')
+        .then(response => {
+            if (!response.ok) throw new Error('Kick.wav not found');
+            console.log('Kick.wav found');
+        })
+        .catch(error => console.error('Audio file error:', error));
 
-        // Log successful loading
-        audioFiles.legs.addEventListener('loadeddata', () => {
-            console.log('Kick.wav loaded successfully');
-        });
-        audioFiles.arms.addEventListener('loadeddata', () => {
-            console.log('Clap.wav loaded successfully');
-        });
-
-        return true;
-    } catch (error) {
-        console.error('Failed to load audio files:', error);
-        return false;
-    }
-}
+    fetch('sounds/Clap.wav')
+        .then(response => {
+            if (!response.ok) throw new Error('Clap.wav not found');
+            console.log('Clap.wav found');
+        })
+        .catch(error => console.error('Audio file error:', error));
+});
 
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
@@ -56,13 +44,9 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera - simplified version
+// Initialize camera
 async function initCamera() {
     try {
-        // First try to get camera permission
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        // Then try to get the back camera
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
@@ -71,22 +55,18 @@ async function initCamera() {
             }
         });
 
-        // Set up video element
         video.srcObject = stream;
-        video.setAttribute('playsinline', true); // important for iOS
+        video.setAttribute('playsinline', true);
         
-        // Wait for video to be ready
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
                 video.play().then(resolve);
             };
         });
 
-        // Set up canvas with fixed dimensions
         canvas.width = 1280;
         canvas.height = 720;
 
-        // Set up MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
@@ -95,7 +75,6 @@ async function initCamera() {
             height: 720
         });
 
-        // Start camera
         camera.start();
         statusDiv.textContent = 'Camera ready';
 
@@ -105,34 +84,22 @@ async function initCamera() {
     }
 }
 
-// Improved audio initialization
+// Simplified audio initialization
 async function initializeAudio() {
     try {
-        // Load audio files
-        if (!loadAudioFiles()) {
-            throw new Error('Failed to load audio files');
+        // Pre-load and test both audio files
+        for (const [key, audio] of Object.entries(audioFiles)) {
+            audio.volume = 0.8;
+            await audio.play();
+            audio.pause();
+            audio.currentTime = 0;
+            console.log(`${key} audio loaded and tested`);
         }
-
-        // Test audio playback
-        await Promise.all([
-            audioFiles.legs.play().then(() => audioFiles.legs.pause()),
-            audioFiles.arms.play().then(() => audioFiles.arms.pause())
-        ]);
-
-        // Reset audio files to start
-        audioFiles.legs.currentTime = 0;
-        audioFiles.arms.currentTime = 0;
-
-        // Set initial volumes
-        audioFiles.legs.volume = 0.8;
-        audioFiles.arms.volume = 0.8;
-
-        console.log('Audio system initialized successfully');
-        statusDiv.textContent = 'Audio system ready';
+        
+        statusDiv.textContent = 'Audio ready - try moving!';
         return true;
     } catch (error) {
         console.error('Audio initialization failed:', error);
-        statusDiv.textContent = 'Audio initialization failed - check console';
         return false;
     }
 }
@@ -140,27 +107,19 @@ async function initializeAudio() {
 // Improved sound playback
 function playSound(soundType, velocity) {
     const audio = audioFiles[soundType];
-    if (!audio) {
-        console.error('Audio not found for:', soundType);
-        return;
-    }
+    if (!audio) return;
 
     try {
-        audio.volume = Math.min(1.0, velocity * 3);
-        audio.currentTime = 0;
-        const playPromise = audio.play();
-        
-        if (playPromise) {
-            playPromise.catch(error => {
-                console.error('Error playing sound:', error);
-            });
-        }
+        // Clone the audio for overlapping sounds
+        const sound = audio.cloneNode();
+        sound.volume = Math.min(1.0, velocity * 5); // Increased volume multiplier
+        sound.play().catch(e => console.error('Play error:', e));
     } catch (error) {
-        console.error('Error in playSound:', error);
+        console.error('Playback error:', error);
     }
 }
 
-// Adjust motion detection to be more sensitive
+// Motion detection with increased sensitivity
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -169,21 +128,20 @@ function detectMotions(landmarks) {
         rightArm: { moving: false, velocity: 0 }
     };
 
-    const smoothingFactor = 0.5;  // Increased for more responsiveness
-    const movementThreshold = 0.01;  // Reduced for easier triggering
-    const visibilityThreshold = 0.3;  // Reduced to detect more movements
+    const smoothingFactor = 0.6;    // Increased for more responsiveness
+    const movementThreshold = 0.008; // Decreased for easier triggering
+    const visibilityThreshold = 0.2; // Decreased for better detection
 
     function calculateMovement(point1, point2, lastPos, id) {
         if (!point1 || !point2 || point1.visibility < visibilityThreshold) return { moving: false, velocity: 0 };
         
-        // Calculate movement based on both X and Y coordinates for better detection
         const currentPosY = Math.abs(point1.y - point2.y);
         const currentPosX = Math.abs(point1.x - point2.x);
         const movement = Math.sqrt(currentPosX * currentPosX + currentPosY * currentPosY);
         const velocity = Math.abs(movement - lastPos) * smoothingFactor;
         const moving = velocity > movementThreshold;
         
-        return { moving, velocity };
+        return { moving, velocity: velocity * 1.5 }; // Increased velocity scaling
     }
 
     const result = {
@@ -193,7 +151,6 @@ function detectMotions(landmarks) {
         rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm, 'rightArm')
     };
 
-    // Update last positions
     lastPositions = {
         leftLeg: Math.abs(landmarks[27].y - landmarks[25].y),
         rightLeg: Math.abs(landmarks[28].y - landmarks[26].y),
@@ -204,17 +161,15 @@ function detectMotions(landmarks) {
     return result;
 }
 
-// Update the results processing to use audio files
+// Process results and trigger sounds
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
-        // Draw skeleton
         drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
             {color: '#00FF00', lineWidth: 2});
             
-        // Draw landmarks
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
@@ -224,20 +179,15 @@ function onResults(results) {
             }
         });
 
-        // Process motion and trigger sounds
         const motions = detectMotions(results.poseLandmarks);
         
-        // Combine leg movements
         if (motions.leftLeg.moving || motions.rightLeg.moving) {
-            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity);
-            console.log('Leg movement detected, velocity:', velocity);
+            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity) * 1.2;
             playSound('legs', velocity);
         }
         
-        // Combine arm movements
         if (motions.leftArm.moving || motions.rightArm.moving) {
-            const velocity = Math.max(motions.leftArm.velocity, motions.rightArm.velocity);
-            console.log('Arm movement detected, velocity:', velocity);
+            const velocity = Math.max(motions.leftArm.velocity, motions.rightArm.velocity) * 1.2;
             playSound('arms', velocity);
         }
     }
@@ -246,7 +196,7 @@ function onResults(results) {
 // Set up pose detection
 pose.onResults(onResults);
 
-// Initialize everything
+// Initialize camera
 initCamera();
 
 // Audio initialization on button click
@@ -255,7 +205,6 @@ startButton.addEventListener('click', async () => {
         startButton.disabled = true;
         console.log('Initializing audio...');
         
-        // Initialize audio system
         if (await initializeAudio()) {
             startButton.textContent = 'Audio Running';
             statusDiv.textContent = 'System ready - try moving!';

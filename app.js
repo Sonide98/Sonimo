@@ -27,15 +27,20 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
+// Add this at the top with other global variables
+let lastSoundTime = 0;
+
 // Camera initialization
 async function initCamera() {
     try {
-        // Request camera access with more specific constraints
+        // Request camera access with adjusted constraints
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: { ideal: 'environment' },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                width: { ideal: 640 },  // Reduced from 1280
+                height: { ideal: 480 }, // Reduced from 720
+                zoom: 1.0,
+                aspectRatio: 16/9
             }
         });
 
@@ -90,21 +95,28 @@ function initializeAudio() {
     }
 }
 
-// Sound generation
+// Adjust sound generation
 function playSound(soundType, velocity) {
     if (!audioContext || !oscillator || !gainNode) return;
 
     const now = audioContext.currentTime;
     const frequency = soundType === 'legs' ? 200 : 400;
+    
+    // Add debouncing to prevent too frequent sound triggers
+    if (now - lastSoundTime < 0.1) return; // Minimum 100ms between sounds
+    lastSoundTime = now;
 
     oscillator.frequency.setValueAtTime(frequency, now);
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(velocity * 0.5, now + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    
+    // Adjusted velocity scaling and timing
+    const scaledVelocity = Math.min(velocity * 0.3, 0.5); // Reduced from 0.5
+    gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.02);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 }
 
-// Motion detection
+// Adjust motion detection parameters
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -113,9 +125,10 @@ function detectMotions(landmarks) {
         rightArm: { moving: false, velocity: 0 }
     };
 
-    const smoothingFactor = 0.6;
-    const movementThreshold = 0.008;
-    const visibilityThreshold = 0.2;
+    // Adjusted parameters for smoother detection
+    const smoothingFactor = 0.3;  // Reduced from 0.6
+    const movementThreshold = 0.012;  // Increased from 0.008
+    const visibilityThreshold = 0.3;  // Increased from 0.2
 
     function calculateMovement(point1, point2, lastPos) {
         if (!point1 || !point2 || point1.visibility < visibilityThreshold) {
@@ -129,7 +142,7 @@ function detectMotions(landmarks) {
         
         return { 
             moving: velocity > movementThreshold,
-            velocity: velocity * 1.5
+            velocity: Math.min(velocity, 1.0) // Cap the velocity
         };
     }
 

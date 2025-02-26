@@ -26,24 +26,19 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera specifically for iPhone rear camera
+// Initialize camera for iPhone
 async function initCamera() {
     try {
-        // For iPhone, we need these specific constraints
+        // Simple constraints to start with
         const constraints = {
             video: {
-                facingMode: { exact: "environment" },
-                height: { min: 720, ideal: 1280 },
-                width: { min: 480, ideal: 720 }
+                facingMode: 'environment',  // Removed 'exact' to be more permissive
+                width: { ideal: 720 },
+                height: { ideal: 1280 }
             }
         };
 
-        // Stop any existing streams
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-
-        // Get the video stream with iPhone-specific constraints
+        // Get the video stream
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
 
@@ -55,65 +50,25 @@ async function initCamera() {
             };
         });
 
-        // Get track settings
-        const track = stream.getVideoTracks()[0];
-        const settings = track.getSettings();
+        // Set canvas size to match video
+        canvas.width = 720;
+        canvas.height = 1280;
 
-        // Set canvas size
-        canvas.width = settings.height;  // Swap width and height for proper orientation
-        canvas.height = settings.width;
-
-        // Initialize MediaPipe camera with swapped dimensions
+        // Initialize MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: settings.height,  // Swap width and height here too
-            height: settings.width
+            width: 720,
+            height: 1280
         });
 
         camera.start();
         statusDiv.textContent = 'Camera ready';
-        console.log('Camera initialized with settings:', settings);
 
     } catch (err) {
         console.error("Camera error:", err);
-        
-        // Try fallback method for iPhone
-        try {
-            const fallbackConstraints = {
-                video: {
-                    facingMode: "environment",  // Remove exact to be more permissive
-                    height: { ideal: 1280 },
-                    width: { ideal: 720 }
-                }
-            };
-            
-            const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-            video.srcObject = stream;
-            video.play();
-            
-            const track = stream.getVideoTracks()[0];
-            const settings = track.getSettings();
-            
-            canvas.width = settings.height;
-            canvas.height = settings.width;
-            
-            const camera = new window.Camera(video, {
-                onFrame: async () => {
-                    await pose.send({image: video});
-                },
-                width: settings.height,
-                height: settings.width
-            });
-            
-            camera.start();
-            statusDiv.textContent = 'Camera ready (fallback mode)';
-            
-        } catch (fallbackErr) {
-            console.error("Fallback camera error:", fallbackErr);
-            statusDiv.textContent = 'Camera failed. Please refresh and try again.';
-        }
+        statusDiv.textContent = 'Camera failed. Please refresh and try again.';
     }
 }
 
@@ -274,3 +229,4 @@ startButton.addEventListener('click', async () => {
         startButton.textContent = 'Start Audio';
     }
 });
+

@@ -26,91 +26,52 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Revised camera initialization
+// Initialize camera - simplified version
 async function initCamera() {
     try {
-        // Stop any existing streams
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-
-        // Request camera with specific constraints
+        // First try to get camera permission
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        
+        // Then try to get the back camera
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                facingMode: { exact: "environment" },  // Force rear camera
-                width: { min: 640, ideal: 1280, max: 1920 },
-                height: { min: 480, ideal: 720, max: 1080 }
+                facingMode: 'environment',
+                height: { min: 480, ideal: 720, max: 1080 },
+                width: { min: 640, ideal: 1280, max: 1920 }
             }
         });
 
-        // Set up video
+        // Set up video element
         video.srcObject = stream;
+        video.setAttribute('playsinline', true); // important for iOS
         
         // Wait for video to be ready
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
-                video.play();
-                resolve();
+                video.play().then(resolve);
             };
         });
 
-        // Get actual video dimensions
-        const videoTrack = stream.getVideoTracks()[0];
-        const settings = videoTrack.getSettings();
-        console.log('Camera settings:', settings);
-
-        // Set canvas dimensions
-        canvas.width = settings.width || 1280;
-        canvas.height = settings.height || 720;
+        // Set up canvas with fixed dimensions
+        canvas.width = 1280;
+        canvas.height = 720;
 
         // Set up MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: canvas.width,
-            height: canvas.height
+            width: 1280,
+            height: 720
         });
 
         // Start camera
-        await camera.start();
+        camera.start();
         statusDiv.textContent = 'Camera ready';
 
-    } catch (firstErr) {
-        console.error("First camera attempt failed:", firstErr);
-        
-        // Fallback attempt
-        try {
-            const fallbackStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: "environment",  // Less strict constraint
-                    width: 1280,
-                    height: 720
-                }
-            });
-
-            video.srcObject = fallbackStream;
-            await video.play();
-
-            const settings = fallbackStream.getVideoTracks()[0].getSettings();
-            canvas.width = settings.width || 1280;
-            canvas.height = settings.height || 720;
-
-            const camera = new window.Camera(video, {
-                onFrame: async () => {
-                    await pose.send({image: video});
-                },
-                width: canvas.width,
-                height: canvas.height
-            });
-
-            await camera.start();
-            statusDiv.textContent = 'Camera ready (fallback mode)';
-
-        } catch (err) {
-            console.error("Camera initialization failed:", err);
-            statusDiv.textContent = 'Camera failed. Please check permissions and refresh.';
-        }
+    } catch (err) {
+        console.error("Camera error:", err);
+        statusDiv.textContent = 'Camera failed - please refresh and allow camera access';
     }
 }
 
@@ -270,19 +231,5 @@ startButton.addEventListener('click', async () => {
         startButton.disabled = false;
         startButton.textContent = 'Start Audio';
     }
-});
-
-// Also add this right after your variable declarations at the top
-document.addEventListener('DOMContentLoaded', () => {
-    // Request camera permissions early
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(() => {
-            console.log('Camera permission granted');
-            initCamera();
-        })
-        .catch(err => {
-            console.error('Camera permission error:', err);
-            statusDiv.textContent = 'Please grant camera permissions and refresh';
-        });
 });
 

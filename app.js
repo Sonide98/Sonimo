@@ -9,9 +9,10 @@ let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
 // Audio setup
 let audioContext = null;
-let oscillators = [];  // Array for multiple oscillators
-let gainNode = null;
+let oscillator = null;  // Single oscillator for subtle harmony
 let noiseNode = null;
+let gainNode = null;
+let noiseGainNode = null;  // Separate gain for noise
 let filterNode = null;
 
 // Initialize MediaPipe Pose
@@ -36,75 +37,21 @@ let lastSoundTime = 0;
 let currentFacingMode = 'environment';
 let cameraUtils = null;
 
-// Add the button reference
-let switchCameraButton = document.getElementById('switchCameraButton');
-
 // Camera initialization
 async function initCamera() {
     try {
-        // Stop any existing camera stream
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-        
-        // Stop existing camera utility if it exists
-        if (cameraUtils) {
-            await cameraUtils.stop();
-        }
-
-        // Get list of available video devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        console.log('Available video devices:', videoDevices);
-
-        // Try to get camera with current facing mode
-        let stream = null;
-        try {
-            const constraints = {
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                }
-            };
-
-            // If we have multiple cameras, try to select the correct one
-            if (videoDevices.length > 1) {
-                if (currentFacingMode === 'environment') {
-                    // Try to get the back camera
-                    constraints.video.facingMode = { exact: 'environment' };
-                    // As fallback, try the last device (usually back camera on phones)
-                    if (videoDevices.length > 1) {
-                        constraints.video.deviceId = { exact: videoDevices[videoDevices.length - 1].deviceId };
-                    }
-                } else {
-                    // Try to get the front camera
-                    constraints.video.facingMode = { exact: 'user' };
-                    // As fallback, try the first device (usually front camera on phones)
-                    constraints.video.deviceId = { exact: videoDevices[0].deviceId };
-                }
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { exact: 'environment' },
+                width: { ideal: 640 },
+                height: { ideal: 480 }
             }
+        });
 
-            console.log('Trying constraints:', constraints);
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            
-            // Log the track settings to verify which camera we got
-            const videoTrack = stream.getVideoTracks()[0];
-            console.log('Camera settings:', videoTrack.getSettings());
-
-        } catch (err) {
-            console.log('Specific camera failed, trying simple fallback:', err);
-            // Simple fallback
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: true
-            });
-        }
-
-        // Set up new video stream
         video.srcObject = stream;
-        video.setAttribute('playsinline', ''); // Required for iOS
+        video.setAttribute('playsinline', '');
         await video.play();
 
-        // Get actual video dimensions
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
         
@@ -114,7 +61,6 @@ async function initCamera() {
         canvas.width = containerWidth;
         canvas.height = containerHeight;
 
-        // Create new camera utility
         cameraUtils = new Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
@@ -124,12 +70,10 @@ async function initCamera() {
         await cameraUtils.start();
         statusDiv.textContent = 'Camera ready - click Start Audio';
         startButton.disabled = false;
-        switchCameraButton.disabled = false;
 
     } catch (err) {
         console.error("Camera error:", err);
         statusDiv.textContent = 'Camera failed - please refresh and allow camera access';
-        switchCameraButton.disabled = false;
     }
 }
 
@@ -138,7 +82,7 @@ function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
-        // Create noise generator for texture
+        // Create noise generator for main percussive sound
         const bufferSize = 2 * audioContext.sampleRate;
         const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
         const output = noiseBuffer.getChannelData(0);
@@ -154,30 +98,30 @@ function initializeAudio() {
         filterNode = audioContext.createBiquadFilter();
         filterNode.type = 'bandpass';
         filterNode.frequency.value = 800;
-        filterNode.Q.value = 1;
+        filterNode.Q.value = 2;
         
-        // Create multiple oscillators for harmony
-        const harmonicFreqs = [220, 330, 440, 550]; // A3, E4, A4, C#5
-        oscillators = harmonicFreqs.map(freq => {
-            const osc = audioContext.createOscillator();
-            osc.type = 'triangle';
-            osc.frequency.value = freq;
-            return osc;
-        });
+        // Create single oscillator for subtle harmony
+        oscillator = audioContext.createOscillator();
+        oscillator.type = 'sine';
         
-        // Create gain node
+        // Create separate gain nodes for noise and harmony
+        noiseGainNode = audioContext.createGain();
         gainNode = audioContext.createGain();
+        
+        noiseGainNode.gain.value = 0;
         gainNode.gain.value = 0;
         
         // Connect everything
         noiseNode.connect(filterNode);
-        filterNode.connect(gainNode);
-        oscillators.forEach(osc => osc.connect(gainNode));
+        filterNode.connect(noiseGainNode);
+        oscillator.connect(gainNode);
+        
+        noiseGainNode.connect(audioContext.destination);
         gainNode.connect(audioContext.destination);
         
         // Start audio nodes
         noiseNode.start();
-        oscillators.forEach(osc => osc.start());
+        oscillator.start();
 
         return true;
     } catch (error) {
@@ -186,52 +130,39 @@ function initializeAudio() {
     }
 }
 
-// Update sound generation for more melodic sounds
+// Update sound generation to be more percussive with subtle harmony
 function playSound(soundType, velocity) {
     if (!audioContext || !gainNode) return;
 
     const now = audioContext.currentTime;
     
-    // Reduced debounce time
     if (now - lastSoundTime < 0.08) return;
     lastSoundTime = now;
 
-    // Different harmonics for arms and legs
-    if (soundType === 'legs') {
-        // Lower frequencies for legs
-        oscillators.forEach((osc, i) => {
-            const baseFreq = 110; // A2
-            const harmonics = [1, 1.5, 2, 2.5]; // Harmonic series
-            osc.frequency.setValueAtTime(baseFreq * harmonics[i], now);
-        });
-        filterNode.frequency.setValueAtTime(400, now);
-        
-        // Percussive envelope for legs
-        gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(0, now);
-        const scaledVelocity = Math.min(velocity * 0.5, 0.7);
-        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-        
-    } else {
-        // Higher frequencies for arms
-        oscillators.forEach((osc, i) => {
-            const baseFreq = 220; // A3
-            const harmonics = [1, 1.5, 2, 2.5]; // Harmonic series
-            osc.frequency.setValueAtTime(baseFreq * harmonics[i], now);
-        });
-        filterNode.frequency.setValueAtTime(800, now);
-        
-        // Smoother envelope for arms
-        gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(0, now);
-        const scaledVelocity = Math.min(velocity * 0.4, 0.6);
-        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.05);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-    }
+    // Set base frequency based on movement type
+    const baseFreq = soundType === 'legs' ? 100 : 200;
+    oscillator.frequency.setValueAtTime(baseFreq, now);
+    
+    // Adjust filter for noise based on movement type
+    filterNode.frequency.setValueAtTime(
+        soundType === 'legs' ? 400 : 800,
+        now
+    );
+    filterNode.Q.setValueAtTime(velocity * 3 + 1, now);
 
-    // Modulate filter based on velocity
-    filterNode.Q.setValueAtTime(velocity * 5 + 1, now);
+    // Percussive envelope for noise (main sound)
+    noiseGainNode.gain.cancelScheduledValues(now);
+    noiseGainNode.gain.setValueAtTime(0, now);
+    const noiseVelocity = Math.min(velocity * 0.8, 0.9);  // Stronger noise
+    noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
+    noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    // Subtle harmonic envelope (background sound)
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(0, now);
+    const harmonyVelocity = Math.min(velocity * 0.15, 0.2);  // Much quieter harmony
+    gainNode.gain.linearRampToValueAtTime(harmonyVelocity, now + 0.02);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 }
 
 // Adjust motion detection parameters
@@ -331,7 +262,6 @@ function onResults(results) {
 // Initialize everything
 async function init() {
     startButton.disabled = true;
-    switchCameraButton.disabled = true;
     statusDiv.textContent = 'Initializing...';
     
     pose.onResults(onResults);
@@ -357,25 +287,5 @@ startButton.addEventListener('click', async () => {
         startButton.disabled = false;
         startButton.textContent = 'Retry Audio';
         statusDiv.textContent = 'Audio failed - click to retry';
-    }
-});
-
-// Update the camera switch handler
-switchCameraButton.addEventListener('click', async () => {
-    try {
-        switchCameraButton.disabled = true;
-        statusDiv.textContent = 'Switching camera...';
-        
-        // Toggle facing mode
-        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-        
-        // Force a small delay to ensure previous camera is fully stopped
-        await new Promise(resolve => setTimeout(resolve, 300));
-        await initCamera();
-        
-    } catch (error) {
-        console.error('Error switching camera:', error);
-        statusDiv.textContent = 'Failed to switch camera';
-        switchCameraButton.disabled = false;
     }
 });

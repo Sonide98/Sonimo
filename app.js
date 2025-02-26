@@ -31,22 +31,28 @@ pose.setOptions({
 // Add this at the top with other global variables
 let lastSoundTime = 0;
 
+// Add at the top with other global variables
+let currentFacingMode = 'environment';
+let cameraUtils = null;
+
+// Add the button reference
+let switchCameraButton = document.getElementById('switchCameraButton');
+
 // Camera initialization
 async function initCamera() {
     try {
-        // First try to get the back camera
+        // Try to get camera with current facing mode
         let stream = null;
         try {
             stream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    facingMode: { exact: 'environment' },
+                    facingMode: { exact: currentFacingMode },
                     width: { ideal: 640 },
                     height: { ideal: 480 }
                 }
             });
         } catch (err) {
-            // If back camera fails, try any available camera
-            console.log('Back camera failed, trying any camera');
+            console.log('Specific camera failed, trying any camera');
             stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     width: { ideal: 640 },
@@ -55,23 +61,31 @@ async function initCamera() {
             });
         }
 
+        // Stop any existing camera stream
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+        
+        // Stop existing camera utility if it exists
+        if (cameraUtils) {
+            await cameraUtils.stop();
+        }
+
         video.srcObject = stream;
-        video.setAttribute('playsinline', ''); // Important for iOS
+        video.setAttribute('playsinline', '');
         await video.play();
 
-        // Get actual video dimensions
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
         
-        // Calculate container dimensions while maintaining aspect ratio
         const containerWidth = canvas.parentElement.clientWidth;
         const containerHeight = (containerWidth * videoHeight) / videoWidth;
         
         canvas.width = containerWidth;
         canvas.height = containerHeight;
 
-        // Set up the camera utility
-        const cameraUtils = new Camera(video, {
+        // Create new camera utility
+        cameraUtils = new Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             }
@@ -80,6 +94,7 @@ async function initCamera() {
         await cameraUtils.start();
         statusDiv.textContent = 'Camera ready - click Start Audio';
         startButton.disabled = false;
+        switchCameraButton.disabled = false;
 
     } catch (err) {
         console.error("Camera error:", err);
@@ -257,12 +272,10 @@ function onResults(results) {
 // Initialize everything
 async function init() {
     startButton.disabled = true;
+    switchCameraButton.disabled = true;
     statusDiv.textContent = 'Initializing...';
     
-    // Set up pose detection
     pose.onResults(onResults);
-    
-    // Initialize camera
     await initCamera();
 }
 
@@ -286,4 +299,11 @@ startButton.addEventListener('click', async () => {
         startButton.textContent = 'Retry Audio';
         statusDiv.textContent = 'Audio failed - click to retry';
     }
+});
+
+// Add camera switch handler
+switchCameraButton.addEventListener('click', async () => {
+    switchCameraButton.disabled = true;
+    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+    await initCamera();
 });

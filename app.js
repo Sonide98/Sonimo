@@ -11,6 +11,7 @@ let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 let audioContext = null;
 let oscillator = null;
 let gainNode = null;
+let noiseNode = null; // For percussive sounds
 
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
@@ -33,35 +34,48 @@ let lastSoundTime = 0;
 // Camera initialization
 async function initCamera() {
     try {
-        // Request camera access with adjusted constraints
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 640 },  // Reduced from 1280
-                height: { ideal: 480 }, // Reduced from 720
-                zoom: 1.0,
-                aspectRatio: 16/9
-            }
-        });
+        // First try to get the back camera
+        let stream = null;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { exact: 'environment' },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+        } catch (err) {
+            // If back camera fails, try any available camera
+            console.log('Back camera failed, trying any camera');
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+        }
 
         video.srcObject = stream;
-        video.play();
+        await video.play();
 
-        // Adjust canvas size based on video dimensions
-        const videoAspectRatio = 16/9;
+        // Get actual video dimensions
+        const videoWidth = video.videoWidth;
+        const videoHeight = video.videoHeight;
+        
+        // Calculate container dimensions while maintaining aspect ratio
         const containerWidth = canvas.parentElement.clientWidth;
-        const containerHeight = containerWidth * videoAspectRatio;
+        const containerHeight = (containerWidth * videoHeight) / videoWidth;
         
         canvas.width = containerWidth;
         canvas.height = containerHeight;
 
-        // Initialize MediaPipe camera with correct dimensions
+        // Initialize MediaPipe camera with video dimensions
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: containerWidth,
-            height: containerHeight
+            width: videoWidth,
+            height: videoHeight
         });
 
         camera.start();
@@ -78,15 +92,35 @@ async function initCamera() {
 function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Create noise generator for more percussive sounds
+        const bufferSize = 2 * audioContext.sampleRate;
+        const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+        }
+        
+        noiseNode = audioContext.createBufferSource();
+        noiseNode.buffer = noiseBuffer;
+        noiseNode.loop = true;
+        
+        // Create oscillator
         oscillator = audioContext.createOscillator();
+        oscillator.type = 'triangle'; // Changed from 'sine' for more character
+        
+        // Create gain nodes
         gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        oscillator.type = 'sine';
         gainNode.gain.value = 0;
+        
+        // Connect nodes
+        oscillator.connect(gainNode);
+        noiseNode.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Start audio nodes
         oscillator.start();
+        noiseNode.start();
 
         return true;
     } catch (error) {
@@ -100,20 +134,23 @@ function playSound(soundType, velocity) {
     if (!audioContext || !oscillator || !gainNode) return;
 
     const now = audioContext.currentTime;
-    const frequency = soundType === 'legs' ? 200 : 400;
     
-    // Add debouncing to prevent too frequent sound triggers
-    if (now - lastSoundTime < 0.1) return; // Minimum 100ms between sounds
+    // Add debouncing
+    if (now - lastSoundTime < 0.1) return;
     lastSoundTime = now;
 
+    // Different frequencies for arms and legs
+    const frequency = soundType === 'legs' ? 150 : 300;
     oscillator.frequency.setValueAtTime(frequency, now);
+
+    // Create percussive envelope
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setValueAtTime(0, now);
     
-    // Adjusted velocity scaling and timing
-    const scaledVelocity = Math.min(velocity * 0.3, 0.5); // Reduced from 0.5
-    gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.02);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    // Quick attack, short decay
+    const scaledVelocity = Math.min(velocity * 0.4, 0.7);
+    gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
 }
 
 // Adjust motion detection parameters

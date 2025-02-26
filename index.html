@@ -28,7 +28,7 @@
         .container {
             position: relative;
             width: 100%;
-            max-width: 100vh;
+            max-width: 480px;
             margin: 20px auto;
         }
         canvas {
@@ -40,7 +40,11 @@
             border: 1px solid #ddd;
         }
         video {
-            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
         }
         #startButton {
             padding: 12px 24px;
@@ -72,7 +76,6 @@
 <body>
     <h1>SoniMo</h1>
     <div id="status">Initializing camera...</div>
-    </div>
     <button id="startButton">Start Audio</button>
     <script src="app.js"></script>
     <div class="container">

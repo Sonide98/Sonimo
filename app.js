@@ -134,22 +134,30 @@ function playSound(soundType, velocity) {
 
     const now = audioContext.currentTime;
     
-    // Add debouncing
-    if (now - lastSoundTime < 0.1) return;
+    // Reduced debounce time for more responsive sounds
+    if (now - lastSoundTime < 0.08) return;
     lastSoundTime = now;
 
-    // Different frequencies for arms and legs
-    const frequency = soundType === 'legs' ? 150 : 300;
-    oscillator.frequency.setValueAtTime(frequency, now);
-
-    // Create percussive envelope
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setValueAtTime(0, now);
-    
-    // Quick attack, short decay
-    const scaledVelocity = Math.min(velocity * 0.4, 0.7);
-    gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    // Different frequencies and characteristics for arms and legs
+    if (soundType === 'legs') {
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(120, now); // Lower frequency for legs
+        // More percussive envelope for legs
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(0, now);
+        const scaledVelocity = Math.min(velocity * 0.6, 0.8); // Higher volume for legs
+        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    } else {
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(300, now);
+        // Slightly longer envelope for arms
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(0, now);
+        const scaledVelocity = Math.min(velocity * 0.4, 0.7);
+        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    }
 }
 
 // Adjust motion detection parameters
@@ -161,10 +169,10 @@ function detectMotions(landmarks) {
         rightArm: { moving: false, velocity: 0 }
     };
 
-    // Adjusted parameters for smoother detection
-    const smoothingFactor = 0.3;  // Reduced from 0.6
-    const movementThreshold = 0.012;  // Increased from 0.008
-    const visibilityThreshold = 0.3;  // Increased from 0.2
+    // More sensitive parameters for both arms and legs
+    const smoothingFactor = 0.4;  // Increased for more immediate response
+    const movementThreshold = 0.008;  // Reduced for better sensitivity
+    const visibilityThreshold = 0.3;
 
     function calculateMovement(point1, point2, lastPos) {
         if (!point1 || !point2 || point1.visibility < visibilityThreshold) {
@@ -178,23 +186,24 @@ function detectMotions(landmarks) {
         
         return { 
             moving: velocity > movementThreshold,
-            velocity: Math.min(velocity, 1.0) // Cap the velocity
+            velocity: Math.min(velocity * 1.5, 1.0) // Increased scaling for more dynamic response
         };
     }
 
+    // Use ankle and knee points for legs instead of hip points
     const result = {
-        leftLeg: calculateMovement(landmarks[27], landmarks[25], lastPositions.leftLeg),
-        rightLeg: calculateMovement(landmarks[28], landmarks[26], lastPositions.rightLeg),
-        leftArm: calculateMovement(landmarks[15], landmarks[11], lastPositions.leftArm),
-        rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm)
+        leftLeg: calculateMovement(landmarks[27], landmarks[25], lastPositions.leftLeg),   // Left ankle to knee
+        rightLeg: calculateMovement(landmarks[28], landmarks[26], lastPositions.rightLeg),  // Right ankle to knee
+        leftArm: calculateMovement(landmarks[15], landmarks[11], lastPositions.leftArm),    // Left wrist to shoulder
+        rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm)   // Right wrist to shoulder
     };
 
     // Update last positions
     lastPositions = {
-        leftLeg: Math.abs(landmarks[27].y - landmarks[25].y),
-        rightLeg: Math.abs(landmarks[28].y - landmarks[26].y),
-        leftArm: Math.abs(landmarks[15].y - landmarks[11].y),
-        rightArm: Math.abs(landmarks[16].y - landmarks[12].y)
+        leftLeg: Math.abs(landmarks[27].y - landmarks[25].y),   // Left ankle to knee
+        rightLeg: Math.abs(landmarks[28].y - landmarks[26].y),  // Right ankle to knee
+        leftArm: Math.abs(landmarks[15].y - landmarks[11].y),   // Left wrist to shoulder
+        rightArm: Math.abs(landmarks[16].y - landmarks[12].y)   // Right wrist to shoulder
     };
 
     return result;
@@ -228,11 +237,11 @@ function onResults(results) {
             }
         });
 
-        // Process movements
+        // Process movements with increased velocity scaling
         const motions = detectMotions(results.poseLandmarks);
         
         if (motions.leftLeg.moving || motions.rightLeg.moving) {
-            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity) * 1.2;
+            const velocity = Math.max(motions.leftLeg.velocity, motions.rightLeg.velocity) * 1.5;
             playSound('legs', velocity);
         }
         

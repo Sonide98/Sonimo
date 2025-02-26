@@ -42,26 +42,6 @@ let switchCameraButton = document.getElementById('switchCameraButton');
 // Camera initialization
 async function initCamera() {
     try {
-        // Try to get camera with current facing mode
-        let stream = null;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { exact: currentFacingMode },
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                }
-            });
-        } catch (err) {
-            console.log('Specific camera failed, trying any camera');
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                }
-            });
-        }
-
         // Stop any existing camera stream
         if (video.srcObject) {
             video.srcObject.getTracks().forEach(track => track.stop());
@@ -72,10 +52,38 @@ async function initCamera() {
             await cameraUtils.stop();
         }
 
+        // Try to get camera with current facing mode
+        let stream = null;
+        try {
+            // For iOS, we need to be more specific with constraints
+            const constraints = {
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+
+            // If we specifically want back camera, use 'environment'
+            if (currentFacingMode === 'environment') {
+                constraints.video.facingMode = { exact: 'environment' };
+            }
+
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+            console.log('Specific camera failed, trying fallback:', err);
+            // Fallback to any available camera
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+        }
+
+        // Set up new video stream
         video.srcObject = stream;
-        video.setAttribute('playsinline', '');
+        video.setAttribute('playsinline', ''); // Required for iOS
         await video.play();
 
+        // Get actual video dimensions
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
         
@@ -100,6 +108,7 @@ async function initCamera() {
     } catch (err) {
         console.error("Camera error:", err);
         statusDiv.textContent = 'Camera failed - please refresh and allow camera access';
+        switchCameraButton.disabled = false; // Re-enable the button on error
     }
 }
 
@@ -332,7 +341,20 @@ startButton.addEventListener('click', async () => {
 
 // Add camera switch handler
 switchCameraButton.addEventListener('click', async () => {
-    switchCameraButton.disabled = true;
-    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-    await initCamera();
+    try {
+        switchCameraButton.disabled = true;
+        statusDiv.textContent = 'Switching camera...';
+        
+        // Toggle facing mode
+        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+        
+        // Wait a brief moment before reinitializing camera
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await initCamera();
+        
+    } catch (error) {
+        console.error('Error switching camera:', error);
+        statusDiv.textContent = 'Failed to switch camera';
+        switchCameraButton.disabled = false;
+    }
 });

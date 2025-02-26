@@ -42,6 +42,9 @@
             display: block;
         }
         video {
+            width: 100%; /* Set video width to 100% */
+            height: auto; /* Maintain aspect ratio */
+            object-fit: cover; /* Cover the area without distortion */
             display: none; /* Hide video element, we will draw on canvas */
         }
         #startButton {

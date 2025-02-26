@@ -42,25 +42,76 @@ pose.setOptions({
 // Camera initialization
 async function initCamera() {
     try {
-        // First try without exact constraint
-        let stream = null;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
+        // Try different camera constraints in order of preference
+        const constraints = [
+            // iOS Safari and modern browsers - environment camera with exact constraint
+            {
                 video: {
-                    facingMode: 'environment',  // Removed 'exact' constraint
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
+                    facingMode: { exact: "environment" },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 }
-            });
-        } catch (err) {
-            console.log('Failed with environment camera, trying any camera:', err);
-            stream = await navigator.mediaDevices.getUserMedia({
+            },
+            // Fallback for iOS - try to get back camera using sourceId
+            async () => {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                // On iOS, the back camera is usually the last in the list
+                const backCamera = videoDevices[videoDevices.length - 1];
+                
+                if (backCamera) {
+                    return {
+                        video: {
+                            deviceId: { exact: backCamera.deviceId },
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    };
+                }
+                throw new Error('No back camera found');
+            },
+            // General fallback - try environment without exact constraint
+            {
+                video: {
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            },
+            // Last resort - any available camera
+            {
                 video: true
-            });
+            }
+        ];
+
+        let stream = null;
+
+        // Try each constraint in order until one works
+        for (const constraint of constraints) {
+            try {
+                if (typeof constraint === 'function') {
+                    // Handle async constraint generator
+                    const generatedConstraint = await constraint();
+                    stream = await navigator.mediaDevices.getUserMedia(generatedConstraint);
+                } else {
+                    stream = await navigator.mediaDevices.getUserMedia(constraint);
+                }
+                console.log('Camera initialized with constraint:', constraint);
+                break;
+            } catch (err) {
+                console.log('Failed to initialize camera with constraint:', constraint, err);
+                continue;
+            }
+        }
+
+        if (!stream) {
+            throw new Error('Could not initialize any camera');
         }
 
         video.srcObject = stream;
-        video.setAttribute('playsinline', '');
+        video.setAttribute('playsinline', ''); // Required for iOS
+        video.setAttribute('autoplay', ''); // Help ensure video plays
+        video.setAttribute('muted', ''); // Required for autoplay in some browsers
         await video.play();
 
         const videoWidth = video.videoWidth;

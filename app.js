@@ -34,8 +34,8 @@ async function initCamera() {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                width: { ideal: 720 },
+                height: { ideal: 1280 }
             }
         });
 
@@ -47,8 +47,8 @@ async function initCamera() {
         await video.play();
 
         // Set canvas size
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
+        canvas.width = video.videoWidth || 720;
+        canvas.height = video.videoHeight || 1280;
 
         // Initialize MediaPipe camera
         const camera = new window.Camera(video, {

@@ -26,66 +26,30 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera with multiple fallback options
+// Initialize camera specifically for iPhone back camera
 async function initCamera() {
     try {
+        // First request permission
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        
+        // Then enumerate devices - this ensures we have permission to see device labels
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         
-        let stream;
-        
-        // Try different camera initialization methods
-        for (const method of [
-            // Method 1: Try to find and use back camera by label
-            async () => {
-                const backCamera = videoDevices.find(d => 
-                    d.label.toLowerCase().includes('back') || 
-                    d.label.toLowerCase().includes('rear'));
-                if (backCamera) {
-                    return await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            deviceId: { exact: backCamera.deviceId },
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 }
-                        }
-                    });
-                }
-                throw new Error('Back camera not found');
-            },
-            // Method 2: Try environment facing mode
-            async () => {
-                return await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { exact: 'environment' },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    }
-                });
-            },
-            // Method 3: Try simple environment mode
-            async () => {
-                return await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    }
-                });
+        // For iPhone, we need to be very specific about the constraints
+        const constraints = {
+            video: {
+                facingMode: { exact: "environment" }, // Force back camera
+                width: { min: 640, ideal: 1280, max: 1920 },
+                height: { min: 480, ideal: 720, max: 1080 }
             }
-        ]) {
-            try {
-                stream = await method();
-                if (stream) break;
-            } catch (e) {
-                console.log('Camera method failed, trying next...');
-            }
-        }
+        };
 
-        if (!stream) {
-            throw new Error('Could not initialize camera');
-        }
-
+        // Get the video stream
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
+
+        // Wait for video to be ready
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
                 video.play();
@@ -93,14 +57,18 @@ async function initCamera() {
             };
         });
 
-        // Set canvas size to match video
+        // Get actual video track settings
         const track = stream.getVideoTracks()[0];
         const settings = track.getSettings();
+        
+        // Log camera info for debugging
+        console.log('Camera settings:', settings);
+        console.log('Using camera:', track.label);
+
+        // Set canvas size to match video
         canvas.width = settings.width;
         canvas.height = settings.height;
 
-        statusDiv.textContent = 'Camera ready';
-        
         // Initialize MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
@@ -109,11 +77,13 @@ async function initCamera() {
             width: settings.width,
             height: settings.height
         });
+
         camera.start();
+        statusDiv.textContent = 'Camera ready';
 
     } catch (err) {
         console.error("Camera error:", err);
-        statusDiv.textContent = 'Camera initialization failed';
+        statusDiv.textContent = 'Camera initialization failed. Please ensure camera permissions are granted and try again.';
     }
 }
 

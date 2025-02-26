@@ -118,10 +118,46 @@ async function loadAudioFiles() {
     }
 }
 
+// Update the playSound function
+function playSound(soundType, velocity) {
+    const audio = audioFiles[soundType];
+    if (!audio) {
+        console.error('Audio not found for:', soundType);
+        return;
+    }
+
+    try {
+        // Create a new audio context on first play (needed for Safari)
+        if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Use a simpler playback method without cloning
+        if (audio.paused || audio.ended) {
+            audio.volume = Math.min(1.0, velocity * 5);
+            audio.currentTime = 0;
+            const playPromise = audio.play();
+            
+            if (playPromise) {
+                playPromise.catch(error => {
+                    if (error.name !== 'NotAllowedError') {
+                        console.error('Play error:', error);
+                    }
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Playback error:', error);
+    }
+}
+
 // Update the initializeAudio function
 async function initializeAudio() {
     try {
         console.log('Starting audio initialization...');
+        
+        // Create audio context first (needed for Safari)
+        window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
         // Load the audio files
         if (!await loadAudioFiles()) {
@@ -132,15 +168,8 @@ async function initializeAudio() {
         audioFiles.legs.volume = 0.8;
         audioFiles.arms.volume = 0.8;
 
-        // Test play (required for iOS)
-        await Promise.all([
-            audioFiles.legs.play().then(() => audioFiles.legs.pause()),
-            audioFiles.arms.play().then(() => audioFiles.arms.pause())
-        ]);
-
-        // Reset positions
-        audioFiles.legs.currentTime = 0;
-        audioFiles.arms.currentTime = 0;
+        // For iOS, we need a user gesture to start audio
+        await window.audioContext.resume();
 
         console.log('Audio system initialized successfully');
         statusDiv.textContent = 'Audio ready - try moving!';
@@ -149,21 +178,6 @@ async function initializeAudio() {
         console.error('Audio initialization failed:', error);
         statusDiv.textContent = 'Audio failed - check console';
         return false;
-    }
-}
-
-// Improved sound playback
-function playSound(soundType, velocity) {
-    const audio = audioFiles[soundType];
-    if (!audio) return;
-
-    try {
-        // Clone the audio for overlapping sounds
-        const sound = audio.cloneNode();
-        sound.volume = Math.min(1.0, velocity * 5); // Increased volume multiplier
-        sound.play().catch(e => console.error('Play error:', e));
-    } catch (error) {
-        console.error('Playback error:', error);
     }
 }
 
@@ -253,10 +267,19 @@ startButton.addEventListener('click', async () => {
         startButton.disabled = true;
         console.log('Initializing audio...');
         
+        // Resume audio context on click (needed for Safari/iOS)
+        if (window.audioContext) {
+            await window.audioContext.resume();
+        }
+        
         if (await initializeAudio()) {
             startButton.textContent = 'Audio Running';
             statusDiv.textContent = 'System ready - try moving!';
             console.log('Audio initialization successful');
+            
+            // Play a silent sound to unlock audio on iOS
+            const silentSound = new Audio("data:audio/mp3;base64,//MkxAAHiAICWABElBeKPL/RANb2w+yiT1g/gTok//lP/W/l3h8QO/OCdCqCW2Cw//MkxAQHkAIWUAhEmAQXWUOFW2dxPu//9mr60ElY5sseQ+xxesmHKtZr7bsqqX2L//MkxAgFwAYiQAhEAC2hq22d3///9FTV6tA36JdgBJoOGgc+7qvqej5Zu7/7uI9l//MkxBQHAAYi8AhEAO193vt9KGOq+6qcT7hhfN5FTInmwk8RkqKImTM55pRQHQSq//MkxBsGkgoIAABHhTACIJLf99nVI///yuW1uBqWfEu7CgNPWGpUadBmZ////4sL//MkxCMHMAH9iABEmAsKioqKigsLCwtVTEFNRTMuOTkuNVVVVVVVVVVVVVVVVVVV//MkxCkECAUYCAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV");
+            silentSound.play().catch(() => {});
         } else {
             throw new Error('Audio initialization failed');
         }

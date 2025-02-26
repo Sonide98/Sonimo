@@ -3,6 +3,8 @@ let canvas = document.getElementById('canvasOutput');
 let ctx = canvas.getContext('2d');
 let startButton = document.getElementById('startButton');
 let statusDiv = document.getElementById('status');
+let toggleButton = document.getElementById('toggleButton');
+let volumeSlider = document.getElementById('volumeSlider');
 
 // Track last positions for movement detection
 let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
@@ -14,6 +16,13 @@ let noiseNode = null;
 let gainNode = null;
 let noiseGainNode = null;  // Separate gain for noise
 let filterNode = null;
+
+// Add at the top with other global variables
+let lastSoundTime = 0;
+let currentFacingMode = 'environment';
+let cameraUtils = null;
+let isSoundEnabled = true;
+let masterGainNode = null;
 
 // Initialize MediaPipe Pose
 const pose = new Pose({
@@ -29,13 +38,6 @@ pose.setOptions({
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
 });
-
-// Add this at the top with other global variables
-let lastSoundTime = 0;
-
-// Add at the top with other global variables
-let currentFacingMode = 'environment';
-let cameraUtils = null;
 
 // Camera initialization
 async function initCamera() {
@@ -95,6 +97,10 @@ function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
+        // Create master gain node for volume control
+        masterGainNode = audioContext.createGain();
+        masterGainNode.gain.value = 1;
+        
         // Create noise generator for main percussive sound
         const bufferSize = 2 * audioContext.sampleRate;
         const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
@@ -129,12 +135,18 @@ function initializeAudio() {
         filterNode.connect(noiseGainNode);
         oscillator.connect(gainNode);
         
-        noiseGainNode.connect(audioContext.destination);
-        gainNode.connect(audioContext.destination);
+        // Update the audio routing to include master gain
+        noiseGainNode.connect(masterGainNode);
+        gainNode.connect(masterGainNode);
+        masterGainNode.connect(audioContext.destination);
         
         // Start audio nodes
         noiseNode.start();
         oscillator.start();
+
+        // Enable controls
+        toggleButton.disabled = false;
+        volumeSlider.disabled = false;
 
         return true;
     } catch (error) {
@@ -145,7 +157,7 @@ function initializeAudio() {
 
 // Update sound generation to include pitch variation
 function playSound(soundType, velocity) {
-    if (!audioContext || !gainNode) return;
+    if (!audioContext || !gainNode || !isSoundEnabled) return;
 
     const now = audioContext.currentTime;
     
@@ -339,6 +351,8 @@ startButton.addEventListener('click', async () => {
         if (initializeAudio()) {
             startButton.textContent = 'Audio Running';
             statusDiv.textContent = 'System ready - try moving!';
+            toggleButton.disabled = false;
+            volumeSlider.disabled = false;
         } else {
             throw new Error('Audio initialization failed');
         }
@@ -347,5 +361,21 @@ startButton.addEventListener('click', async () => {
         startButton.disabled = false;
         startButton.textContent = 'Retry Audio';
         statusDiv.textContent = 'Audio failed - click to retry';
+        toggleButton.disabled = true;
+        volumeSlider.disabled = true;
+    }
+});
+
+// Add event listeners for new controls
+toggleButton.addEventListener('click', () => {
+    isSoundEnabled = !isSoundEnabled;
+    toggleButton.textContent = isSoundEnabled ? 'Stop Sound' : 'Start Sound';
+    toggleButton.style.background = isSoundEnabled ? '#b55d5d' : '#5da3b5';
+});
+
+volumeSlider.addEventListener('input', (e) => {
+    if (masterGainNode) {
+        const volume = e.target.value / 100;
+        masterGainNode.gain.setValueAtTime(volume, audioContext.currentTime);
     }
 });

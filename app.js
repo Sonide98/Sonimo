@@ -270,4 +270,3 @@ startButton.addEventListener('click', async () => {
         statusDiv.textContent = 'Audio failed - click to retry';
     }
 });
-

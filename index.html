@@ -30,18 +30,19 @@
             width: 100%;
             max-width: 480px;
             margin: 20px auto;
+            aspect-ratio: 9 / 16; /* Maintain 9:16 aspect ratio */
+            overflow: hidden; /* Hide overflow */
         }
         canvas {
             width: 100%;
-            height: auto;
-            aspect-ratio: 9/16;
+            height: 100%; /* Fill the container */
             border-radius: 12px;
             background: #f5f5f5;
             border: 1px solid #ddd;
             display: block;
         }
         video {
-            display: none;
+            display: none; /* Hide video element, we will draw on canvas */
         }
         #startButton {
             padding: 12px 24px;

@@ -9,20 +9,20 @@ let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
 // Audio files setup
 const audioFiles = {
-    legs: new Audio('sounds/Kick.wav'),
-    arms: new Audio('sounds/Clap.wav')
+    legs: new Audio('./sounds/Kick.wav'),
+    arms: new Audio('./sounds/Clap.wav')
 };
 
 // Test audio file paths on load
 window.addEventListener('load', () => {
-    fetch('sounds/Kick.wav')
+    fetch('./sounds/Kick.wav')
         .then(response => {
             if (!response.ok) throw new Error('Kick.wav not found');
             console.log('Kick.wav found');
         })
         .catch(error => console.error('Audio file error:', error));
 
-    fetch('sounds/Clap.wav')
+    fetch('./sounds/Clap.wav')
         .then(response => {
             if (!response.ok) throw new Error('Clap.wav not found');
             console.log('Clap.wav found');
@@ -84,22 +84,43 @@ async function initCamera() {
     }
 }
 
-// Simplified audio initialization
+// Update the audio initialization function
 async function initializeAudio() {
     try {
+        console.log('Starting audio initialization...');
+        
+        // Check if files exist first with updated paths
+        const kickResponse = await fetch('./sounds/Kick.wav');
+        const clapResponse = await fetch('./sounds/Clap.wav');
+        
+        if (!kickResponse.ok) {
+            throw new Error(`Kick.wav not found (${kickResponse.status})`);
+        }
+        if (!clapResponse.ok) {
+            throw new Error(`Clap.wav not found (${clapResponse.status})`);
+        }
+        
+        console.log('Audio files found, loading...');
+
         // Pre-load and test both audio files
         for (const [key, audio] of Object.entries(audioFiles)) {
+            console.log(`Loading ${key} audio...`);
             audio.volume = 0.8;
-            await audio.play();
-            audio.pause();
-            audio.currentTime = 0;
-            console.log(`${key} audio loaded and tested`);
+            try {
+                await audio.play();
+                audio.pause();
+                audio.currentTime = 0;
+                console.log(`${key} audio loaded and tested successfully`);
+            } catch (e) {
+                throw new Error(`Failed to load ${key} audio: ${e.message}`);
+            }
         }
         
         statusDiv.textContent = 'Audio ready - try moving!';
         return true;
     } catch (error) {
         console.error('Audio initialization failed:', error);
+        statusDiv.textContent = `Audio failed: ${error.message}`;
         return false;
     }
 }

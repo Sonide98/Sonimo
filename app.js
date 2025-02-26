@@ -19,6 +19,7 @@ const pose = new window.Pose({
     }
 });
 
+// Configure pose detection
 pose.setOptions({
     modelComplexity: 1,
     smoothLandmarks: true,
@@ -26,48 +27,40 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Update the camera initialization
+// Camera initialization
 async function initCamera() {
     try {
-        // First try to get camera permission
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        // Then try to get the back camera
+        // Request camera access
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
-                height: { min: 480, ideal: 720, max: 1080 },
-                width: { min: 640, ideal: 1280, max: 1920 }
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
             }
         });
 
-        // Set up video element
         video.srcObject = stream;
-        video.setAttribute('playsinline', true); // important for iOS
+        video.setAttribute('playsinline', '');
         
         // Wait for video to be ready
-        await new Promise((resolve) => {
-            video.onloadedmetadata = () => {
-                video.play().then(resolve);
-            };
-        });
+        await video.play();
 
-        // Set up canvas with fixed dimensions
-        canvas.width = 1280;
-        canvas.height = 720;
+        // Set canvas size
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
 
-        // Set up MediaPipe camera
+        // Initialize MediaPipe camera
         const camera = new window.Camera(video, {
             onFrame: async () => {
                 await pose.send({image: video});
             },
-            width: 1280,
-            height: 720
+            width: canvas.width,
+            height: canvas.height
         });
 
-        // Start camera
         await camera.start();
-        statusDiv.textContent = 'Camera ready';
+        statusDiv.textContent = 'Camera ready - click Start Audio';
+        startButton.disabled = false;
 
     } catch (err) {
         console.error("Camera error:", err);
@@ -75,7 +68,7 @@ async function initCamera() {
     }
 }
 
-// Initialize audio system
+// Audio initialization
 function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -96,12 +89,12 @@ function initializeAudio() {
     }
 }
 
-// Play sound with frequency based on movement type
+// Sound generation
 function playSound(soundType, velocity) {
     if (!audioContext || !oscillator || !gainNode) return;
 
     const now = audioContext.currentTime;
-    const frequency = soundType === 'legs' ? 200 : 400; // Different frequencies for legs/arms
+    const frequency = soundType === 'legs' ? 200 : 400;
 
     oscillator.frequency.setValueAtTime(frequency, now);
     gainNode.gain.cancelScheduledValues(now);
@@ -110,7 +103,7 @@ function playSound(soundType, velocity) {
     gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
 }
 
-// Motion detection with increased sensitivity
+// Motion detection
 function detectMotions(landmarks) {
     if (!landmarks || landmarks.length === 0) return {
         leftLeg: { moving: false, velocity: 0 },
@@ -119,29 +112,34 @@ function detectMotions(landmarks) {
         rightArm: { moving: false, velocity: 0 }
     };
 
-    const smoothingFactor = 0.6;    // Increased for more responsiveness
-    const movementThreshold = 0.008; // Decreased for easier triggering
-    const visibilityThreshold = 0.2; // Decreased for better detection
+    const smoothingFactor = 0.6;
+    const movementThreshold = 0.008;
+    const visibilityThreshold = 0.2;
 
-    function calculateMovement(point1, point2, lastPos, id) {
-        if (!point1 || !point2 || point1.visibility < visibilityThreshold) return { moving: false, velocity: 0 };
+    function calculateMovement(point1, point2, lastPos) {
+        if (!point1 || !point2 || point1.visibility < visibilityThreshold) {
+            return { moving: false, velocity: 0 };
+        }
         
         const currentPosY = Math.abs(point1.y - point2.y);
         const currentPosX = Math.abs(point1.x - point2.x);
         const movement = Math.sqrt(currentPosX * currentPosX + currentPosY * currentPosY);
         const velocity = Math.abs(movement - lastPos) * smoothingFactor;
-        const moving = velocity > movementThreshold;
         
-        return { moving, velocity: velocity * 1.5 }; // Increased velocity scaling
+        return { 
+            moving: velocity > movementThreshold,
+            velocity: velocity * 1.5
+        };
     }
 
     const result = {
-        leftLeg: calculateMovement(landmarks[27], landmarks[25], lastPositions.leftLeg, 'leftLeg'),
-        rightLeg: calculateMovement(landmarks[28], landmarks[26], lastPositions.rightLeg, 'rightLeg'),
-        leftArm: calculateMovement(landmarks[15], landmarks[11], lastPositions.leftArm, 'leftArm'),
-        rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm, 'rightArm')
+        leftLeg: calculateMovement(landmarks[27], landmarks[25], lastPositions.leftLeg),
+        rightLeg: calculateMovement(landmarks[28], landmarks[26], lastPositions.rightLeg),
+        leftArm: calculateMovement(landmarks[15], landmarks[11], lastPositions.leftArm),
+        rightArm: calculateMovement(landmarks[16], landmarks[12], lastPositions.rightArm)
     };
 
+    // Update last positions
     lastPositions = {
         leftLeg: Math.abs(landmarks[27].y - landmarks[25].y),
         rightLeg: Math.abs(landmarks[28].y - landmarks[26].y),
@@ -152,15 +150,17 @@ function detectMotions(landmarks) {
     return result;
 }
 
-// Process results and trigger sounds
+// Process pose detection results
 function onResults(results) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
     if (results.poseLandmarks) {
+        // Draw skeleton
         drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
             {color: '#00FF00', lineWidth: 2});
             
+        // Draw landmarks
         results.poseLandmarks.forEach((point) => {
             if (point.visibility > 0.5) {
                 ctx.beginPath();
@@ -170,6 +170,7 @@ function onResults(results) {
             }
         });
 
+        // Process movements
         const motions = detectMotions(results.poseLandmarks);
         
         if (motions.leftLeg.moving || motions.rightLeg.moving) {
@@ -184,19 +185,22 @@ function onResults(results) {
     }
 }
 
-// Update the initialization sequence
+// Initialize everything
 async function init() {
-    // First set up pose detection
+    startButton.disabled = true;
+    statusDiv.textContent = 'Initializing...';
+    
+    // Set up pose detection
     pose.onResults(onResults);
     
-    // Then initialize camera
+    // Initialize camera
     await initCamera();
 }
 
 // Start initialization
 init();
 
-// Keep the audio button handler
+// Handle audio start button
 startButton.addEventListener('click', async () => {
     try {
         startButton.disabled = true;

@@ -143,7 +143,7 @@ function initializeAudio() {
     }
 }
 
-// Update sound generation to be more percussive with subtle harmony
+// Update sound generation to include pitch variation
 function playSound(soundType, velocity) {
     if (!audioContext || !gainNode) return;
 
@@ -152,16 +152,23 @@ function playSound(soundType, velocity) {
     if (now - lastSoundTime < 0.08) return;
     lastSoundTime = now;
 
-    // Set base frequency based on movement type
-    const baseFreq = soundType === 'legs' ? 150 : 350;  // Increased both frequencies
+    // Base frequencies with velocity-based pitch variation
+    let baseFreq;
+    if (soundType === 'legs') {
+        baseFreq = 150 + (velocity * 200); // Frequency range: 150-350Hz for legs
+    } else {
+        baseFreq = 350 + (velocity * 400); // Frequency range: 350-750Hz for arms
+    }
     oscillator.frequency.setValueAtTime(baseFreq, now);
     
-    // Adjust filter for noise based on movement type
+    // Adjust filter frequency based on movement velocity too
     filterNode.frequency.setValueAtTime(
-        soundType === 'legs' ? 600 : 1000,  // Increased filter frequencies
+        soundType === 'legs' ? 
+            600 + (velocity * 400) : // Filter range: 600-1000Hz for legs
+            1000 + (velocity * 800), // Filter range: 1000-1800Hz for arms
         now
     );
-    filterNode.Q.setValueAtTime(velocity * 4 + 1, now);  // Increased resonance
+    filterNode.Q.setValueAtTime(velocity * 4 + 1, now);
 
     // Percussive envelope for noise (main sound)
     noiseGainNode.gain.cancelScheduledValues(now);
@@ -169,7 +176,7 @@ function playSound(soundType, velocity) {
     
     if (soundType === 'legs') {
         // Stronger noise for legs
-        const noiseVelocity = Math.min(velocity * 1.2, 1.0);  // Increased leg volume
+        const noiseVelocity = Math.min(velocity * 1.2, 1.0);
         noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
         noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
     } else {
@@ -179,12 +186,32 @@ function playSound(soundType, velocity) {
         noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
     }
 
-    // Subtle harmonic envelope (background sound)
+    // Subtle harmonic envelope with pitch variation
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setValueAtTime(0, now);
-    const harmonyVelocity = Math.min(velocity * 0.2, 0.25);  // Slightly increased harmony
+    const harmonyVelocity = Math.min(velocity * 0.2, 0.25);
     gainNode.gain.linearRampToValueAtTime(harmonyVelocity, now + 0.02);
     gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+}
+
+// Update motion detection to include vertical position
+function calculateMovement(point1, point2, lastPos) {
+    if (!point1 || !point2 || point1.visibility < visibilityThreshold) {
+        return { moving: false, velocity: 0 };
+    }
+    
+    const currentPosY = Math.abs(point1.y - point2.y);
+    const currentPosX = Math.abs(point1.x - point2.x);
+    const movement = Math.sqrt(currentPosX * currentPosX + currentPosY * currentPosY);
+    const velocity = Math.abs(movement - lastPos) * smoothingFactor;
+    
+    // Add height factor (1 - y means higher position = higher value)
+    const heightFactor = 1 - ((point1.y + point2.y) / 2);
+    
+    return { 
+        moving: velocity > movementThreshold,
+        velocity: Math.min(velocity * 1.5 * (1 + heightFactor), 1.0) // Include height in velocity
+    };
 }
 
 // Adjust motion detection parameters
@@ -211,9 +238,12 @@ function detectMotions(landmarks) {
         const movement = Math.sqrt(currentPosX * currentPosX + currentPosY * currentPosY);
         const velocity = Math.abs(movement - lastPos) * smoothingFactor;
         
+        // Add height factor (1 - y means higher position = higher value)
+        const heightFactor = 1 - ((point1.y + point2.y) / 2);
+        
         return { 
             moving: velocity > movementThreshold,
-            velocity: Math.min(velocity * 1.5, 1.0) // Increased scaling for more dynamic response
+            velocity: Math.min(velocity * 1.5 * (1 + heightFactor), 1.0) // Include height in velocity
         };
     }
 

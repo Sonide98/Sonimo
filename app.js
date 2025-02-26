@@ -9,9 +9,10 @@ let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
 // Audio setup
 let audioContext = null;
-let oscillator = null;
+let oscillators = [];  // Array for multiple oscillators
 let gainNode = null;
-let noiseNode = null; // For percussive sounds
+let noiseNode = null;
+let filterNode = null;
 
 // Initialize MediaPipe Pose
 const pose = new Pose({
@@ -107,7 +108,7 @@ function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
-        // Create noise generator for more percussive sounds
+        // Create noise generator for texture
         const bufferSize = 2 * audioContext.sampleRate;
         const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
         const output = noiseBuffer.getChannelData(0);
@@ -118,23 +119,35 @@ function initializeAudio() {
         noiseNode = audioContext.createBufferSource();
         noiseNode.buffer = noiseBuffer;
         noiseNode.loop = true;
+
+        // Create filter for the noise
+        filterNode = audioContext.createBiquadFilter();
+        filterNode.type = 'bandpass';
+        filterNode.frequency.value = 800;
+        filterNode.Q.value = 1;
         
-        // Create oscillator
-        oscillator = audioContext.createOscillator();
-        oscillator.type = 'triangle'; // Changed from 'sine' for more character
+        // Create multiple oscillators for harmony
+        const harmonicFreqs = [220, 330, 440, 550]; // A3, E4, A4, C#5
+        oscillators = harmonicFreqs.map(freq => {
+            const osc = audioContext.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            return osc;
+        });
         
-        // Create gain nodes
+        // Create gain node
         gainNode = audioContext.createGain();
         gainNode.gain.value = 0;
         
-        // Connect nodes
-        oscillator.connect(gainNode);
-        noiseNode.connect(gainNode);
+        // Connect everything
+        noiseNode.connect(filterNode);
+        filterNode.connect(gainNode);
+        oscillators.forEach(osc => osc.connect(gainNode));
         gainNode.connect(audioContext.destination);
         
         // Start audio nodes
-        oscillator.start();
         noiseNode.start();
+        oscillators.forEach(osc => osc.start());
 
         return true;
     } catch (error) {
@@ -143,36 +156,52 @@ function initializeAudio() {
     }
 }
 
-// Adjust sound generation
+// Update sound generation for more melodic sounds
 function playSound(soundType, velocity) {
-    if (!audioContext || !oscillator || !gainNode) return;
+    if (!audioContext || !gainNode) return;
 
     const now = audioContext.currentTime;
     
-    // Reduced debounce time for more responsive sounds
+    // Reduced debounce time
     if (now - lastSoundTime < 0.08) return;
     lastSoundTime = now;
 
-    // Different frequencies and characteristics for arms and legs
+    // Different harmonics for arms and legs
     if (soundType === 'legs') {
-        oscillator.type = 'triangle';
-        oscillator.frequency.setValueAtTime(120, now); // Lower frequency for legs
-        // More percussive envelope for legs
+        // Lower frequencies for legs
+        oscillators.forEach((osc, i) => {
+            const baseFreq = 110; // A2
+            const harmonics = [1, 1.5, 2, 2.5]; // Harmonic series
+            osc.frequency.setValueAtTime(baseFreq * harmonics[i], now);
+        });
+        filterNode.frequency.setValueAtTime(400, now);
+        
+        // Percussive envelope for legs
         gainNode.gain.cancelScheduledValues(now);
         gainNode.gain.setValueAtTime(0, now);
-        const scaledVelocity = Math.min(velocity * 0.6, 0.8); // Higher volume for legs
-        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        const scaledVelocity = Math.min(velocity * 0.5, 0.7);
+        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        
     } else {
-        oscillator.type = 'triangle';
-        oscillator.frequency.setValueAtTime(300, now);
-        // Slightly longer envelope for arms
+        // Higher frequencies for arms
+        oscillators.forEach((osc, i) => {
+            const baseFreq = 220; // A3
+            const harmonics = [1, 1.5, 2, 2.5]; // Harmonic series
+            osc.frequency.setValueAtTime(baseFreq * harmonics[i], now);
+        });
+        filterNode.frequency.setValueAtTime(800, now);
+        
+        // Smoother envelope for arms
         gainNode.gain.cancelScheduledValues(now);
         gainNode.gain.setValueAtTime(0, now);
-        const scaledVelocity = Math.min(velocity * 0.4, 0.7);
-        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        const scaledVelocity = Math.min(velocity * 0.4, 0.6);
+        gainNode.gain.linearRampToValueAtTime(scaledVelocity, now + 0.05);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
     }
+
+    // Modulate filter based on velocity
+    filterNode.Q.setValueAtTime(velocity * 5 + 1, now);
 }
 
 // Adjust motion detection parameters

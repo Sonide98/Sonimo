@@ -9,8 +9,8 @@ let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
 // Audio files setup
 const audioFiles = {
-    legs: new Audio('./sounds/Kick.wav'),
-    arms: new Audio('./sounds/Clap.wav')
+    legs: null,  // Initialize as null
+    arms: null   // Initialize as null
 };
 
 // Test audio file paths on load
@@ -84,43 +84,70 @@ async function initCamera() {
     }
 }
 
-// Update the audio initialization function
+// Add this function to load audio files
+async function loadAudioFiles() {
+    try {
+        // Create and load audio elements
+        audioFiles.legs = new Audio();
+        audioFiles.arms = new Audio();
+
+        // Set the sources using the full GitHub Pages URL structure
+        const repoPath = window.location.pathname.split('/')[1];  // Gets repository name
+        const basePath = repoPath ? `/${repoPath}` : '';
+        
+        audioFiles.legs.src = `${basePath}/sounds/Kick.wav`;
+        audioFiles.arms.src = `${basePath}/sounds/Clap.wav`;
+
+        // Wait for both files to load
+        await Promise.all([
+            new Promise((resolve, reject) => {
+                audioFiles.legs.addEventListener('canplaythrough', resolve);
+                audioFiles.legs.addEventListener('error', reject);
+            }),
+            new Promise((resolve, reject) => {
+                audioFiles.arms.addEventListener('canplaythrough', resolve);
+                audioFiles.arms.addEventListener('error', reject);
+            })
+        ]);
+
+        console.log('Audio files loaded successfully');
+        return true;
+    } catch (error) {
+        console.error('Failed to load audio files:', error);
+        return false;
+    }
+}
+
+// Update the initializeAudio function
 async function initializeAudio() {
     try {
         console.log('Starting audio initialization...');
         
-        // Check if files exist first with updated paths
-        const kickResponse = await fetch('./sounds/Kick.wav');
-        const clapResponse = await fetch('./sounds/Clap.wav');
-        
-        if (!kickResponse.ok) {
-            throw new Error(`Kick.wav not found (${kickResponse.status})`);
+        // Load the audio files
+        if (!await loadAudioFiles()) {
+            throw new Error('Failed to load audio files');
         }
-        if (!clapResponse.ok) {
-            throw new Error(`Clap.wav not found (${clapResponse.status})`);
-        }
-        
-        console.log('Audio files found, loading...');
 
-        // Pre-load and test both audio files
-        for (const [key, audio] of Object.entries(audioFiles)) {
-            console.log(`Loading ${key} audio...`);
-            audio.volume = 0.8;
-            try {
-                await audio.play();
-                audio.pause();
-                audio.currentTime = 0;
-                console.log(`${key} audio loaded and tested successfully`);
-            } catch (e) {
-                throw new Error(`Failed to load ${key} audio: ${e.message}`);
-            }
-        }
-        
+        // Set initial volumes
+        audioFiles.legs.volume = 0.8;
+        audioFiles.arms.volume = 0.8;
+
+        // Test play (required for iOS)
+        await Promise.all([
+            audioFiles.legs.play().then(() => audioFiles.legs.pause()),
+            audioFiles.arms.play().then(() => audioFiles.arms.pause())
+        ]);
+
+        // Reset positions
+        audioFiles.legs.currentTime = 0;
+        audioFiles.arms.currentTime = 0;
+
+        console.log('Audio system initialized successfully');
         statusDiv.textContent = 'Audio ready - try moving!';
         return true;
     } catch (error) {
         console.error('Audio initialization failed:', error);
-        statusDiv.textContent = `Audio failed: ${error.message}`;
+        statusDiv.textContent = 'Audio failed - check console';
         return false;
     }
 }

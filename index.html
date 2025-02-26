@@ -73,25 +73,7 @@
             font-family: Arial, sans-serif;
         }
         #switchCameraButton {
-            padding: 12px 24px;
-            font-size: 18px;
-            background: #5da3b5;
-            color: white;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            margin-top: 10px;
-            margin-left: 10px;
-            transition: all 0.3s ease;
-        }
-        #switchCameraButton:hover {
-            background: #4a8294;
-            transform: scale(1.05);
-        }
-        #switchCameraButton:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-            transform: none;
+            display: none;
         }
     </style>
 </head>
@@ -103,7 +85,6 @@
         <canvas id="canvasOutput"></canvas>
     </div>
     <button id="startButton">Start Audio</button>
-    <button id="switchCameraButton">Switch Camera</button>
     <script src="app.js"></script>
 </body>
 </html>

@@ -7,32 +7,10 @@ let statusDiv = document.getElementById('status');
 // Track last positions for movement detection
 let lastPositions = { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0 };
 
-// Audio files setup
-const audioFiles = {
-    legs: null,
-    arms: null
-};
-
+// Audio setup
 let audioContext = null;
 let oscillator = null;
 let gainNode = null;
-
-// Test audio file paths on load
-window.addEventListener('load', () => {
-    fetch('./sounds/Kick.wav')
-        .then(response => {
-            if (!response.ok) throw new Error('Kick.wav not found');
-            console.log('Kick.wav found');
-        })
-        .catch(error => console.error('Audio file error:', error));
-
-    fetch('./sounds/Clap.wav')
-        .then(response => {
-            if (!response.ok) throw new Error('Clap.wav not found');
-            console.log('Clap.wav found');
-        })
-        .catch(error => console.error('Audio file error:', error));
-});
 
 // Initialize MediaPipe Pose
 const pose = new window.Pose({
@@ -88,70 +66,28 @@ async function initCamera() {
     }
 }
 
-// Update the loadAudioFiles function
-async function loadAudioFiles() {
+// Initialize audio system
+function initializeAudio() {
     try {
-        // Create audio elements
-        audioFiles.legs = new Audio();
-        audioFiles.arms = new Audio();
-
-        // Set sources with absolute paths
-        const fullPath = window.location.href.split('index.html')[0];
-        audioFiles.legs.src = `${fullPath}sounds/Kick.wav`;
-        audioFiles.arms.src = `${fullPath}sounds/Clap.wav`;
-
-        // Preload the audio
-        audioFiles.legs.preload = 'auto';
-        audioFiles.arms.preload = 'auto';
-
-        await Promise.all([
-            new Promise((resolve) => {
-                audioFiles.legs.addEventListener('canplaythrough', resolve, { once: true });
-                audioFiles.legs.load();
-            }),
-            new Promise((resolve) => {
-                audioFiles.arms.addEventListener('canplaythrough', resolve, { once: true });
-                audioFiles.arms.load();
-            })
-        ]);
-
-        return true;
-    } catch (error) {
-        console.error('Failed to load audio files:', error);
-        return false;
-    }
-}
-
-// Add this function to load audio buffers
-async function loadAudioBuffers() {
-    try {
-        // Create audio context
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Fetch and decode audio files
-        const [kickResponse, clapResponse] = await Promise.all([
-            fetch('./sounds/Kick.wav'),
-            fetch('./sounds/Clap.wav')
-        ]);
+        oscillator = audioContext.createOscillator();
+        gainNode = audioContext.createGain();
 
-        const [kickData, clapData] = await Promise.all([
-            kickResponse.arrayBuffer(),
-            clapResponse.arrayBuffer()
-        ]);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
 
-        [kickBuffer, clapBuffer] = await Promise.all([
-            audioContext.decodeAudioData(kickData),
-            audioContext.decodeAudioData(clapData)
-        ]);
+        oscillator.type = 'sine';
+        gainNode.gain.value = 0;
+        oscillator.start();
 
         return true;
     } catch (error) {
-        console.error('Error loading audio:', error);
+        console.error('Audio initialization failed:', error);
         return false;
     }
 }
 
-// Update the playSound function
+// Play sound with frequency based on movement type
 function playSound(soundType, velocity) {
     if (!audioContext || !oscillator || !gainNode) return;
 
@@ -163,26 +99,6 @@ function playSound(soundType, velocity) {
     gainNode.gain.setValueAtTime(0, now);
     gainNode.gain.linearRampToValueAtTime(velocity * 0.5, now + 0.01);
     gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-}
-
-// Update the initializeAudio function
-async function initializeAudio() {
-    try {
-        if (!await loadAudioBuffers()) {
-            throw new Error('Failed to load audio buffers');
-        }
-
-        // Resume audio context
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-
-        console.log('Audio system initialized');
-        return true;
-    } catch (error) {
-        console.error('Audio initialization failed:', error);
-        return false;
-    }
 }
 
 // Motion detection with increased sensitivity
@@ -265,21 +181,21 @@ pose.onResults(onResults);
 // Initialize camera
 initCamera();
 
-// Update the button click handler
+// Audio initialization on button click
 startButton.addEventListener('click', async () => {
     try {
         startButton.disabled = true;
         
-        if (await initializeAudio()) {
+        if (initializeAudio()) {
             startButton.textContent = 'Audio Running';
             statusDiv.textContent = 'System ready - try moving!';
         } else {
             throw new Error('Audio initialization failed');
         }
     } catch (error) {
-        console.error('Error initializing audio:', error);
+        console.error('Error in button click:', error);
         startButton.disabled = false;
         startButton.textContent = 'Retry Audio';
-        statusDiv.textContent = 'Audio failed - tap to retry';
+        statusDiv.textContent = 'Audio failed - click to retry';
     }
 });

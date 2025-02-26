@@ -155,7 +155,7 @@ function playSound(soundType, velocity) {
     // Base frequencies with velocity-based pitch variation
     let baseFreq;
     if (soundType === 'legs') {
-        baseFreq = 150 + (velocity * 200); // Frequency range: 150-350Hz for legs
+        baseFreq = 300 + (velocity * 200); // Frequency range: 150-350Hz for legs
     } else {
         baseFreq = 350 + (velocity * 400); // Frequency range: 350-750Hz for arms
     }

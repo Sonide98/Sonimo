@@ -30,12 +30,27 @@ pose.setOptions({
     minTrackingConfidence: 0.5
 });
 
-// Initialize camera - simplified to force back camera
+// Initialize camera with forced back camera
 async function initCamera() {
     try {
+        // First try to get all video devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        // Try to find the back camera
+        const backCamera = videoDevices.find(device => 
+            device.label.toLowerCase().includes('back') ||
+            device.label.toLowerCase().includes('rear')
+        );
+
+        // Use back camera if found, otherwise try environment mode
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: "environment",  // Changed from exact to be more compatible
+            video: backCamera ? {
+                deviceId: { exact: backCamera.deviceId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            } : {
+                facingMode: { exact: 'environment' },
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
             }
@@ -57,8 +72,41 @@ async function initCamera() {
             });
             camera.start();
         };
+
+        console.log('Back camera initialized');
     } catch (err) {
-        console.error("Camera error:", err);
+        console.error("First camera attempt failed:", err);
+        
+        // If first attempt fails, try alternative method
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { exact: 'environment' },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+            
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                video.play();
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                const camera = new window.Camera(video, {
+                    onFrame: async () => {
+                        await pose.send({image: video});
+                    },
+                    width: video.videoWidth,
+                    height: video.videoHeight
+                });
+                camera.start();
+            };
+            
+            console.log('Back camera initialized (fallback)');
+        } catch (fallbackErr) {
+            console.error("Camera fallback failed:", fallbackErr);
+        }
     }
 }
 

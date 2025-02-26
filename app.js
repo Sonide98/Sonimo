@@ -41,6 +41,7 @@ async function initCamera() {
 
         video.srcObject = stream;
         video.setAttribute('playsinline', '');
+        video.style.display = 'block';
         
         // Wait for video to be ready
         await video.play();

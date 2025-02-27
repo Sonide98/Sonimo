@@ -141,6 +141,27 @@
             cursor: not-allowed;
             transform: none;
         }
+        .description {
+            width: 100%;
+            max-width: 480px;
+            margin: 20px auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .description h2 {
+            color: #333;
+            font-family: Arial, sans-serif;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+        .description p {
+            color: #666;
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -159,6 +180,19 @@
                 <input type="range" id="volumeSlider" min="0" max="100" value="100" disabled>
             </div>
         </div>
+    </div>
+    <div class="description">
+        <h2>About SoniMo</h2>
+        <p>
+            SoniMo is an interactive web application that transforms your movements into sound.
+            Using your device's camera and advanced pose detection, it creates an audiovisual
+            experience based on your body movements.
+        </p>
+        <p>
+            Move your arms and legs to create different sounds. The intensity and height of
+            your movements affect the sound characteristics, allowing you to create an
+            interactive musical experience with your body.
+        </p>
     </div>
     <script src="app.js"></script>
 </body>

@@ -76,40 +76,65 @@
             display: none;
         }
         .controls {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
             display: flex;
             flex-direction: column;
-            gap: 15px;
             align-items: center;
-            margin-top: 20px;
+            gap: 15px;
+            padding: 0 20px;
+            z-index: 10;
+        }
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            gap: 10px;
         }
         .volume-control {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 15px;
+            width: 100%;
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-top: 10px;
+        }
+        .volume-control label {
+            color: white;
+            min-width: 60px;
         }
         #volumeSlider {
-            width: 200px;
+            flex-grow: 1;
             height: 15px;
         }
-        #toggleButton {
+        #startButton, #toggleButton {
+            flex: 1;
             padding: 12px 24px;
-            font-size: 18px;
-            background: #b55d5d;
+            font-size: 16px;
             color: white;
             border: none;
             border-radius: 25px;
             cursor: pointer;
             transition: all 0.3s ease;
         }
-        #toggleButton:hover {
-            background: #944b4b;
-            transform: scale(1.05);
+        #startButton {
+            background: rgba(93, 163, 181, 0.9);
         }
-        #toggleButton:disabled {
-            background: #cccccc;
+        #toggleButton {
+            background: rgba(181, 93, 93, 0.9);
+        }
+        #startButton:hover {
+            background: rgba(74, 130, 148, 0.9);
+        }
+        #toggleButton:hover {
+            background: rgba(148, 75, 75, 0.9);
+        }
+        #startButton:disabled, #toggleButton:disabled {
+            background: rgba(204, 204, 204, 0.9);
             cursor: not-allowed;
-            transform: none;
         }
     </style>
 </head>
@@ -119,13 +144,15 @@
     <div class="container">
         <video id="videoInput" playsinline></video>
         <canvas id="canvasOutput"></canvas>
-    </div>
-    <div class="controls">
-        <button id="startButton">Start Audio</button>
-        <button id="toggleButton" disabled>Stop Sound</button>
-        <div class="volume-control">
-            <label for="volumeSlider">Volume:</label>
-            <input type="range" id="volumeSlider" min="0" max="100" value="100" disabled>
+        <div class="controls">
+            <div class="button-row">
+                <button id="startButton">Start Audio</button>
+                <button id="toggleButton" disabled>Stop Sound</button>
+            </div>
+            <div class="volume-control">
+                <label for="volumeSlider">Volume:</label>
+                <input type="range" id="volumeSlider" min="0" max="100" value="100" disabled>
+            </div>
         </div>
     </div>
     <script src="app.js"></script>

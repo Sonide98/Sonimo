@@ -112,15 +112,16 @@
         }
         #startButton, #toggleButton {
             flex: 1;
-            width: 50%; /* Add this to ensure equal width */
-            padding: 12px 24px;
-            font-size: 18px;
+            width: 120px; /* Fixed width instead of percentage */
+            padding: 8px 16px; /* Smaller padding */
+            font-size: 16px; /* Slightly smaller font */
             color: white;
             border: none;
             border-radius: 25px;
             cursor: pointer;
             transition: all 0.3s ease;
-            min-width: 140px;
+            text-align: center; /* Ensure text is centered */
+            white-space: nowrap; /* Prevent text wrapping */
         }
         #startButton {
             background: rgba(93, 163, 181, 0.9);
@@ -130,9 +131,11 @@
         }
         #startButton:hover {
             background: rgba(74, 130, 148, 0.9);
+            transform: scale(1.05);
         }
         #toggleButton:hover {
             background: rgba(148, 75, 75, 0.9);
+            transform: scale(1.05);
         }
         #startButton:disabled, #toggleButton:disabled {
             background: rgba(204, 204, 204, 0.9);

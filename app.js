@@ -212,7 +212,8 @@ function playSound(soundType, velocity) {
 
     const now = audioContext.currentTime;
     
-    if (now - lastSoundTime < 0.08) return;
+    // Increase minimum time between sounds to 200ms
+    if (now - lastSoundTime < 0.2) return;
     lastSoundTime = now;
 
     // Base frequencies with velocity-based pitch variation
@@ -233,20 +234,24 @@ function playSound(soundType, velocity) {
     );
     filterNode.Q.setValueAtTime(velocity * 4 + 1, now);
 
+    // Add slight randomization to sound duration
+    const baseDuration = soundType === 'legs' ? 0.15 : 0.12;
+    const randomDuration = baseDuration + (Math.random() * 0.05);
+
     // Percussive envelope for noise (main sound)
     noiseGainNode.gain.cancelScheduledValues(now);
     noiseGainNode.gain.setValueAtTime(0, now);
     
     if (soundType === 'legs') {
-        // Stronger noise for legs
+        // Stronger noise for legs with smoother attack
         const noiseVelocity = Math.min(velocity * 1.2, 1.0);
-        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
-        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.02); // Slower attack
+        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + randomDuration);
     } else {
-        // Original noise for arms
+        // Original noise for arms with smoother envelope
         const noiseVelocity = Math.min(velocity * 0.8, 0.9);
-        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.01);
-        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        noiseGainNode.gain.linearRampToValueAtTime(noiseVelocity, now + 0.015); // Slower attack
+        noiseGainNode.gain.exponentialRampToValueAtTime(0.001, now + randomDuration);
     }
 
     // Subtle harmonic envelope with pitch variation
@@ -254,7 +259,7 @@ function playSound(soundType, velocity) {
     gainNode.gain.setValueAtTime(0, now);
     const harmonyVelocity = Math.min(velocity * 0.2, 0.25);
     gainNode.gain.linearRampToValueAtTime(harmonyVelocity, now + 0.02);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + randomDuration + 0.03);
 }
 
 // Update motion detection to include vertical position

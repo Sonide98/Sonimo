@@ -113,12 +113,16 @@
         #startButton, #toggleButton {
             flex: 1;
             padding: 12px 24px;
-            font-size: 16px;
+            font-size: 18px;
             color: white;
             border: none;
             border-radius: 25px;
             cursor: pointer;
             transition: all 0.3s ease;
+            min-width: 140px; /* Add minimum width to ensure equal size */
+        }
+        #startButton:hover, #toggleButton:hover {
+            transform: scale(1.05);
         }
         #startButton {
             background: rgba(93, 163, 181, 0.9);
@@ -135,6 +139,7 @@
         #startButton:disabled, #toggleButton:disabled {
             background: rgba(204, 204, 204, 0.9);
             cursor: not-allowed;
+            transform: none;
         }
     </style>
 </head>
